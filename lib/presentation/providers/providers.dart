@@ -7,7 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:mymusic/data/datasources/local/song_dao.dart';
 import 'package:mymusic/data/datasources/local/playlist_dao.dart';
 import 'package:mymusic/data/datasources/remote/youtube_datasource.dart';
-import 'package:mymusic/data/datasources/remote/ytdlp_datasource.dart';
+import 'package:mymusic/data/datasources/remote/chaquopy_datasource.dart';
 import 'package:mymusic/data/models/song_model.dart';
 import 'package:mymusic/data/models/playlist_model.dart';
 import 'package:mymusic/data/repositories/downloader_repository_impl.dart';
@@ -40,11 +40,9 @@ final youtubeDatasourceProvider = Provider<IYoutubeDatasource>((ref) {
   return ds;
 });
 
-/// yt-dlp datasource provider (handles actual downloads).
-final ytDlpDatasourceProvider = Provider<YtDlpDatasource>((ref) {
-  final ds = YtDlpDatasource();
-  ref.onDispose(() => ds.dispose());
-  return ds;
+/// Chaquopy datasource provider.
+final chaquopyDatasourceProvider = Provider<ChaquopyDatasource>((ref) {
+  return ChaquopyDatasource();
 });
 
 /// Song DAO provider.
@@ -63,11 +61,11 @@ final playlistDaoProvider = Provider<PlaylistDao>((ref) {
 // REPOSITORY PROVIDERS
 // ═══════════════════════════════════════════════════════════
 
-/// Downloader repository provider (hybrid: youtube_explode + yt-dlp).
+/// Downloader repository provider (hybrid: youtube_explode + chaquopy).
 final downloaderRepositoryProvider = Provider<IDownloaderRepository>((ref) {
   return DownloaderRepositoryImpl(
     youtubeDatasource: ref.watch(youtubeDatasourceProvider),
-    ytDlpDatasource: ref.watch(ytDlpDatasourceProvider),
+    chaquopyDatasource: ref.watch(chaquopyDatasourceProvider),
     songDao: ref.watch(songDaoProvider),
   );
 });

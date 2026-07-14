@@ -8,7 +8,7 @@ import 'package:mymusic/core/constants/app_constants.dart';
 import 'package:mymusic/core/extensions/extensions.dart';
 import 'package:mymusic/data/datasources/local/song_dao.dart';
 import 'package:mymusic/data/datasources/remote/youtube_datasource.dart';
-import 'package:mymusic/data/datasources/remote/ytdlp_datasource.dart';
+import 'package:mymusic/data/datasources/remote/chaquopy_datasource.dart';
 import 'package:mymusic/domain/entities/download_task.dart';
 import 'package:mymusic/domain/entities/song.dart';
 import 'package:mymusic/domain/repositories/i_downloader_repository.dart';
@@ -18,18 +18,19 @@ import 'package:mymusic/domain/repositories/i_downloader_repository.dart';
 ///   • yt-dlp CLI            → actual audio file download (bypasses 403s)
 class DownloaderRepositoryImpl implements IDownloaderRepository {
   final IYoutubeDatasource _youtubeDatasource;
-  final YtDlpDatasource _ytDlpDatasource;
+  final ChaquopyDatasource _chaquopyDatasource;
   final SongDao _songDao;
   final Dio _dio;
-  final Map<String, Process> _activeProcesses = {};
+  // Note: Chaquopy runs inside the process, so it cannot be cancelled easily via Process.kill.
+  final Set<String> _cancelledTasks = {};
 
   DownloaderRepositoryImpl({
     required IYoutubeDatasource youtubeDatasource,
-    required YtDlpDatasource ytDlpDatasource,
+    required ChaquopyDatasource chaquopyDatasource,
     required SongDao songDao,
     Dio? dio,
   })  : _youtubeDatasource = youtubeDatasource,
-        _ytDlpDatasource = ytDlpDatasource,
+        _chaquopyDatasource = chaquopyDatasource,
         _songDao = songDao,
         _dio = dio ?? Dio();
 
@@ -87,25 +88,23 @@ class DownloaderRepositoryImpl implements IDownloaderRepository {
         // Thumbnail failure is non-critical
       }
 
-      // ─── Step 2: Ensure yt-dlp binary is ready ──────────
+      // ─── Step 2: Download audio via Chaquopy yt-dlp ──────────
       task = task.copyWith(
         status: DownloadStatus.downloading,
         progress: 0.0,
       );
       yield task;
 
-      // ─── Step 3: Download audio via yt-dlp ──────────────
-      // This handles YouTube's signature challenges internally,
-      // completely bypassing the 403 errors from youtube_explode.
-      final outputPath = await _ytDlpDatasource.downloadAudio(
+      if (_cancelledTasks.contains(taskId)) throw Exception("Cancelled");
+
+      // This handles YouTube's signature challenges internally via Python.
+      final outputPath = await _chaquopyDatasource.downloadAudio(
         videoId: videoId,
         outputDir: musicDir.path,
         safeFilename: safeTitle,
         onProgress: (progress, speed) {
-          task = task.copyWith(
-            progress: progress,
-            speedBytesPerSec: _parseSpeed(speed),
-          );
+          // Chaquopy executeCode is blocking/async but doesn't easily stream progress back yet.
+          // The wrapper currently prints success at the end.
         },
       );
 
@@ -138,14 +137,13 @@ class DownloaderRepositoryImpl implements IDownloaderRepository {
       );
       yield task;
     } finally {
-      _activeProcesses.remove(taskId);
+      _cancelledTasks.remove(taskId);
     }
   }
 
   @override
   Future<void> cancelDownload(String taskId) async {
-    _activeProcesses[taskId]?.kill();
-    _activeProcesses.remove(taskId);
+    _cancelledTasks.add(taskId);
   }
 
   /// Parse yt-dlp speed string like "10.73MiB/s" to bytes/sec.

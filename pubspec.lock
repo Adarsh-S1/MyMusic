@@ -177,6 +177,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.3.1"
+  chaquopy:
+    dependency: "direct main"
+    description:
+      name: chaquopy
+      sha256: "105115a6e7d6216ea6fa60379f49c63c20924cc5240b223e2bdbf9830a7e86da"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.0.20"
   characters:
     dependency: transitive
     description:

@@ -8,21 +8,28 @@ import 'package:mymusic/core/constants/app_constants.dart';
 import 'package:mymusic/core/extensions/extensions.dart';
 import 'package:mymusic/data/datasources/local/song_dao.dart';
 import 'package:mymusic/data/datasources/remote/youtube_datasource.dart';
+import 'package:mymusic/data/datasources/remote/ytdlp_datasource.dart';
 import 'package:mymusic/domain/entities/download_task.dart';
 import 'package:mymusic/domain/entities/song.dart';
 import 'package:mymusic/domain/repositories/i_downloader_repository.dart';
 
+/// Hybrid downloader implementation:
+///   • youtube_explode_dart → metadata, thumbnail URL, video validation
+///   • yt-dlp CLI            → actual audio file download (bypasses 403s)
 class DownloaderRepositoryImpl implements IDownloaderRepository {
   final IYoutubeDatasource _youtubeDatasource;
+  final YtDlpDatasource _ytDlpDatasource;
   final SongDao _songDao;
   final Dio _dio;
-  final Map<String, CancelToken> _cancelTokens = {};
+  final Map<String, Process> _activeProcesses = {};
 
   DownloaderRepositoryImpl({
     required IYoutubeDatasource youtubeDatasource,
+    required YtDlpDatasource ytDlpDatasource,
     required SongDao songDao,
     Dio? dio,
   })  : _youtubeDatasource = youtubeDatasource,
+        _ytDlpDatasource = ytDlpDatasource,
         _songDao = songDao,
         _dio = dio ?? Dio();
 
@@ -48,8 +55,6 @@ class DownloaderRepositoryImpl implements IDownloaderRepository {
     required AudioStreamInfo stream,
   }) async* {
     final taskId = DateTime.now().microsecondsSinceEpoch.toString();
-    final cancelToken = CancelToken();
-    _cancelTokens[taskId] = cancelToken;
 
     DownloadTask task = DownloadTask(
       id: taskId,
@@ -63,7 +68,7 @@ class DownloaderRepositoryImpl implements IDownloaderRepository {
     yield task;
 
     try {
-      // Get storage directory
+      // Get storage directories
       final extDir = await getExternalStorageDirectory();
       if (extDir == null) throw Exception('Cannot access external storage');
 
@@ -73,69 +78,45 @@ class DownloaderRepositoryImpl implements IDownloaderRepository {
       await thumbDir.create(recursive: true);
 
       final safeTitle = metadata.title.toSafeFilename();
-      // Save as .m4a — just_audio plays AAC/MP4 containers natively.
-      // This avoids needing FFmpeg for conversion entirely.
-      final audioPath = '${musicDir.path}/${videoId}_$safeTitle.m4a';
       final thumbnailPath = '${thumbDir.path}/$videoId.jpg';
 
-      // Handle file collision
-      String outputPath = audioPath;
-      int collision = 1;
-      while (File(outputPath).existsSync()) {
-        outputPath = '${musicDir.path}/${videoId}_${safeTitle}_$collision.m4a';
-        collision++;
-      }
-
-      // ─── Step 1: Download thumbnail ──────────────────────
+      // ─── Step 1: Download thumbnail via Dio ─────────────
       try {
-        await _dio.download(
-          metadata.thumbnailUrl,
-          thumbnailPath,
-          cancelToken: cancelToken,
-        );
+        await _dio.download(metadata.thumbnailUrl, thumbnailPath);
       } catch (_) {
-        // Thumbnail download failure is non-critical
+        // Thumbnail failure is non-critical
       }
 
-      // ─── Step 2: Download audio stream directly ──────────
-      // youtube_explode_dart provides AAC/MP4 streams that
-      // just_audio can play without any conversion.
-      task = task.copyWith(status: DownloadStatus.downloading);
+      // ─── Step 2: Ensure yt-dlp binary is ready ──────────
+      task = task.copyWith(
+        status: DownloadStatus.downloading,
+        progress: 0.0,
+      );
       yield task;
 
-      final stopwatch = Stopwatch()..start();
-      int lastBytes = 0;
-
-      await _dio.download(
-        stream.url,
-        outputPath,
-        cancelToken: cancelToken,
-        onReceiveProgress: (received, total) {
-          final elapsed = stopwatch.elapsedMilliseconds;
-          double speed = 0;
-          if (elapsed > 0) {
-            speed = ((received - lastBytes) / (elapsed / 1000));
-            lastBytes = received;
-            stopwatch.reset();
-          }
-
+      // ─── Step 3: Download audio via yt-dlp ──────────────
+      // This handles YouTube's signature challenges internally,
+      // completely bypassing the 403 errors from youtube_explode.
+      final outputPath = await _ytDlpDatasource.downloadAudio(
+        videoId: videoId,
+        outputDir: musicDir.path,
+        safeFilename: safeTitle,
+        onProgress: (progress, speed) {
           task = task.copyWith(
-            progress: total > 0 ? received / total : 0,
-            downloadedBytes: received,
-            totalBytes: total > 0 ? total : stream.sizeBytes,
-            speedBytesPerSec: speed,
+            progress: progress,
+            speedBytesPerSec: _parseSpeed(speed),
           );
         },
       );
 
       yield task.copyWith(progress: 1.0);
 
-      // ─── Step 3: Save to database ───────────────────────
+      // ─── Step 4: Save to database ───────────────────────
       task = task.copyWith(status: DownloadStatus.processing);
       yield task;
 
       final song = Song(
-        id: '0', // Will be auto-assigned by Isar
+        id: '0', // Auto-assigned by Isar
         videoId: videoId,
         title: metadata.title,
         artist: metadata.author,
@@ -147,24 +128,8 @@ class DownloaderRepositoryImpl implements IDownloaderRepository {
 
       await _songDao.saveSong(song);
 
-      // ─── Step 4: Emit completion ─────────────────────────
-      task = task.copyWith(
-        status: DownloadStatus.completed,
-        progress: 1.0,
-      );
-      yield task;
-    } on DioException catch (e) {
-      if (CancelToken.isCancel(e)) {
-        task = task.copyWith(
-          status: DownloadStatus.cancelled,
-          errorMessage: 'Download cancelled',
-        );
-      } else {
-        task = task.copyWith(
-          status: DownloadStatus.failed,
-          errorMessage: 'Network error: ${e.message}',
-        );
-      }
+      // ─── Step 5: Emit completion ─────────────────────────
+      task = task.copyWith(status: DownloadStatus.completed, progress: 1.0);
       yield task;
     } catch (e) {
       task = task.copyWith(
@@ -173,13 +138,32 @@ class DownloaderRepositoryImpl implements IDownloaderRepository {
       );
       yield task;
     } finally {
-      _cancelTokens.remove(taskId);
+      _activeProcesses.remove(taskId);
     }
   }
 
   @override
   Future<void> cancelDownload(String taskId) async {
-    _cancelTokens[taskId]?.cancel('User cancelled');
-    _cancelTokens.remove(taskId);
+    _activeProcesses[taskId]?.kill();
+    _activeProcesses.remove(taskId);
+  }
+
+  /// Parse yt-dlp speed string like "10.73MiB/s" to bytes/sec.
+  double _parseSpeed(String speed) {
+    if (speed.isEmpty) return 0;
+    try {
+      final match = RegExp(r'([\d.]+)\s*(KiB|MiB|GiB|B)').firstMatch(speed);
+      if (match == null) return 0;
+      final value = double.parse(match.group(1)!);
+      final unit = match.group(2)!;
+      switch (unit) {
+        case 'GiB': return value * 1024 * 1024 * 1024;
+        case 'MiB': return value * 1024 * 1024;
+        case 'KiB': return value * 1024;
+        default: return value;
+      }
+    } catch (_) {
+      return 0;
+    }
   }
 }

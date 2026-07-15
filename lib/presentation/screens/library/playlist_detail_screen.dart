@@ -41,7 +41,13 @@ class PlaylistDetailScreen extends ConsumerWidget {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.queue_music, size: 64, color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.4)),
+                  Icon(
+                    Icons.queue_music,
+                    size: 64,
+                    color: theme.colorScheme.onSurfaceVariant.withValues(
+                      alpha: 0.4,
+                    ),
+                  ),
                   const SizedBox(height: 16),
                   Text('Playlist is empty', style: theme.textTheme.titleMedium),
                   const SizedBox(height: 8),
@@ -57,14 +63,15 @@ class PlaylistDetailScreen extends ConsumerWidget {
 
           return Column(
             children: [
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 16.0),
-                child: FilledButton.icon(
-                  onPressed: () => ref.read(playerProvider.notifier).playQueue(songs, 0),
-                  icon: const Icon(Icons.play_arrow),
-                  label: const Text('Play All'),
-                ),
-              ),
+              // Padding(
+              //   padding: const EdgeInsets.symmetric(vertical: 16.0),
+              //   child: FilledButton.icon(
+              //     onPressed: () =>
+              //         ref.read(playerProvider.notifier).playQueue(songs, 0),
+              //     icon: const Icon(Icons.play_arrow),
+              //     label: const Text('Play All'),
+              //   ),
+              // ),
               Expanded(
                 child: ListView.builder(
                   itemCount: songs.length,
@@ -72,22 +79,40 @@ class PlaylistDetailScreen extends ConsumerWidget {
                     final song = songs[index];
                     return ListTile(
                       leading: Container(
-                        width: 48, height: 48,
-                        decoration: BoxDecoration(color: theme.colorScheme.primaryContainer, borderRadius: BorderRadius.circular(8)),
-                        child: Icon(Icons.music_note, color: theme.colorScheme.primary),
+                        width: 48,
+                        height: 48,
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.primaryContainer,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Icon(
+                          Icons.music_note,
+                          color: theme.colorScheme.primary,
+                        ),
                       ),
-                      title: Text(song.title, maxLines: 1, overflow: TextOverflow.ellipsis),
-                      subtitle: Text('${song.artist ?? 'Unknown Artist'} • ${song.duration.toHumanString()}', style: theme.textTheme.bodySmall),
+                      title: Text(
+                        song.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      subtitle: Text(
+                        '${song.artist ?? 'Unknown Artist'} • ${song.duration.toHumanString()}',
+                        style: theme.textTheme.bodySmall,
+                      ),
                       trailing: IconButton(
                         icon: const Icon(Icons.remove_circle_outline),
                         onPressed: () {
-                          ref.read(libraryRepositoryProvider).removeSongFromPlaylist(playlistId, song.videoId);
+                          ref
+                              .read(libraryRepositoryProvider)
+                              .removeSongFromPlaylist(playlistId, song.videoId);
                           ref.invalidate(playlistSongsProvider(playlistId));
                           ref.invalidate(playlistsProvider);
                         },
                       ),
                       onTap: () {
-                        ref.read(playerProvider.notifier).playQueue(songs, index);
+                        ref
+                            .read(playerProvider.notifier)
+                            .playQueue(songs, index);
                       },
                     );
                   },
@@ -99,6 +124,15 @@ class PlaylistDetailScreen extends ConsumerWidget {
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(child: Text('Error: $e')),
       ),
+      floatingActionButton: (songsAsync.valueOrNull?.isNotEmpty ?? false)
+          ? FloatingActionButton.extended(
+              onPressed: () => ref
+                  .read(playerProvider.notifier)
+                  .playQueue(songsAsync.value!, 0),
+              label: const Text('Play All'),
+              icon: const Icon(Icons.play_arrow),
+            )
+          : null,
     );
   }
 
@@ -109,7 +143,10 @@ class PlaylistDetailScreen extends ConsumerWidget {
         title: const Text('Delete Playlist'),
         content: Text('Are you sure you want to delete "$playlistName"?'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
           TextButton(
             onPressed: () {
               ref.read(libraryRepositoryProvider).deletePlaylist(playlistId);
@@ -117,7 +154,10 @@ class PlaylistDetailScreen extends ConsumerWidget {
               Navigator.pop(ctx); // Close dialog
               Navigator.pop(context); // Go back to library
             },
-            child: Text('Delete', style: TextStyle(color: Theme.of(context).colorScheme.error)),
+            child: Text(
+              'Delete',
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
           ),
         ],
       ),
@@ -152,7 +192,9 @@ class _AddSongsSheetState extends ConsumerState<_AddSongsSheet> {
   @override
   Widget build(BuildContext context) {
     final libraryAsync = ref.watch(libraryProvider);
-    final playlistSongsAsync = ref.watch(playlistSongsProvider(widget.playlistId));
+    final playlistSongsAsync = ref.watch(
+      playlistSongsProvider(widget.playlistId),
+    );
 
     return DraggableScrollableSheet(
       initialChildSize: 0.9,
@@ -167,7 +209,10 @@ class _AddSongsSheetState extends ConsumerState<_AddSongsSheet> {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text('Add Songs', style: Theme.of(context).textTheme.titleLarge),
+                  Text(
+                    'Add Songs',
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
                   TextButton(
                     onPressed: () => Navigator.pop(context),
                     child: const Text('Done'),
@@ -180,12 +225,18 @@ class _AddSongsSheetState extends ConsumerState<_AddSongsSheet> {
                 data: (allSongs) {
                   return playlistSongsAsync.when(
                     data: (playlistSongs) {
-                      final existingIds = playlistSongs.map((s) => s.videoId).toSet();
+                      final existingIds = playlistSongs
+                          .map((s) => s.videoId)
+                          .toSet();
                       // Only show songs not already in the playlist
-                      final availableSongs = allSongs.where((s) => !existingIds.contains(s.videoId)).toList();
+                      final availableSongs = allSongs
+                          .where((s) => !existingIds.contains(s.videoId))
+                          .toList();
 
                       if (availableSongs.isEmpty) {
-                        return const Center(child: Text('No more songs to add.'));
+                        return const Center(
+                          child: Text('No more songs to add.'),
+                        );
                       }
 
                       return ListView.builder(
@@ -193,7 +244,9 @@ class _AddSongsSheetState extends ConsumerState<_AddSongsSheet> {
                         itemCount: availableSongs.length,
                         itemBuilder: (context, index) {
                           final song = availableSongs[index];
-                          final isSelected = _selectedVideoIds.contains(song.videoId);
+                          final isSelected = _selectedVideoIds.contains(
+                            song.videoId,
+                          );
 
                           return CheckboxListTile(
                             value: isSelected,
@@ -205,22 +258,37 @@ class _AddSongsSheetState extends ConsumerState<_AddSongsSheet> {
                                   _selectedVideoIds.remove(song.videoId);
                                 }
                               });
-                              
+
                               // Add or remove immediately
                               if (value == true) {
-                                await ref.read(libraryRepositoryProvider).addSongToPlaylist(widget.playlistId, song.videoId);
+                                await ref
+                                    .read(libraryRepositoryProvider)
+                                    .addSongToPlaylist(
+                                      widget.playlistId,
+                                      song.videoId,
+                                    );
                               } else {
-                                await ref.read(libraryRepositoryProvider).removeSongFromPlaylist(widget.playlistId, song.videoId);
+                                await ref
+                                    .read(libraryRepositoryProvider)
+                                    .removeSongFromPlaylist(
+                                      widget.playlistId,
+                                      song.videoId,
+                                    );
                               }
                             },
-                            title: Text(song.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+                            title: Text(
+                              song.title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
                             subtitle: Text(song.artist ?? 'Unknown'),
                             secondary: const Icon(Icons.music_note),
                           );
                         },
                       );
                     },
-                    loading: () => const Center(child: CircularProgressIndicator()),
+                    loading: () =>
+                        const Center(child: CircularProgressIndicator()),
                     error: (e, _) => Center(child: Text('Error: $e')),
                   );
                 },

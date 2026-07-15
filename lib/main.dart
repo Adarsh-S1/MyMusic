@@ -1,9 +1,11 @@
 import 'dart:io';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:audio_service/audio_service.dart';
 import 'package:just_audio/just_audio.dart';
+import 'package:share_handler/share_handler.dart';
 
 import 'package:mymusic/presentation/providers/providers.dart';
 import 'package:mymusic/presentation/screens/home/home_screen.dart';
@@ -179,9 +181,58 @@ final _router = GoRouter(
 // App Shell — Scaffold with BottomNavBar + MiniPlayer
 // ═══════════════════════════════════════════════════════════
 
-class AppShell extends ConsumerWidget {
+class AppShell extends ConsumerStatefulWidget {
   final Widget child;
   const AppShell({super.key, required this.child});
+
+  @override
+  ConsumerState<AppShell> createState() => _AppShellState();
+}
+
+class _AppShellState extends ConsumerState<AppShell> {
+  StreamSubscription<SharedMedia>? _intentDataStreamSubscription;
+
+  @override
+  void initState() {
+    super.initState();
+    _initShareHandler();
+  }
+
+  Future<void> _initShareHandler() async {
+    final handler = ShareHandlerPlatform.instance;
+
+    // 1. Get media shared while the app was closed
+    try {
+      final initialMedia = await handler.getInitialSharedMedia();
+      if (initialMedia != null) {
+        _handleSharedText(initialMedia);
+      }
+    } catch (e) {
+      debugPrint("ShareHandler initial error: $e");
+    }
+
+    // 2. Listen for media shared while the app is running
+    _intentDataStreamSubscription = handler.sharedMediaStream.listen((SharedMedia media) {
+      _handleSharedText(media);
+    }, onError: (err) {
+      debugPrint("ShareHandler stream error: $err");
+    });
+  }
+
+  void _handleSharedText(SharedMedia media) {
+    final text = media.content;
+    if (text != null && text.isNotEmpty) {
+      // Just check if it has YouTube URL pattern or just send it directly
+      ref.read(downloadFormProvider.notifier).onUrlChanged(text);
+      context.go('/download');
+    }
+  }
+
+  @override
+  void dispose() {
+    _intentDataStreamSubscription?.cancel();
+    super.dispose();
+  }
 
   static int _calculateSelectedIndex(BuildContext context) {
     final location = GoRouterState.of(context).uri.toString();
@@ -193,11 +244,11 @@ class AppShell extends ConsumerWidget {
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final selectedIndex = _calculateSelectedIndex(context);
 
     return Scaffold(
-      body: child,
+      body: widget.child,
       bottomNavigationBar: Column(
         mainAxisSize: MainAxisSize.min,
         children: [

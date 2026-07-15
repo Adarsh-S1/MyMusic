@@ -97,14 +97,17 @@ class YtGrooveAudioHandler extends BaseAudioHandler with SeekHandler {
     return super.stop();
   }
 
+  VoidCallback? onNext;
+  VoidCallback? onPrevious;
+
   @override
   Future<void> skipToNext() async {
-    // Handled by PlayerNotifier
+    onNext?.call();
   }
 
   @override
   Future<void> skipToPrevious() async {
-    // Handled by PlayerNotifier
+    onPrevious?.call();
   }
 }
 

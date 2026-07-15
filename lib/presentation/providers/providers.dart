@@ -357,7 +357,11 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
 
   PlayerNotifier() : super(const PlayerState()) {
     _initAudioListeners();
+    audioHandler.onNext = next;
+    audioHandler.onPrevious = previous;
   }
+
+  bool _isAdvancing = false;
 
   /// Subscribe to the audio player's streams so our state stays in sync.
   void _initAudioListeners() {
@@ -387,9 +391,13 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
     // Handle song completion — auto-advance to next track
     _completionSub = player.playerStateStream
         .where((ps) => ps.processingState == ProcessingState.completed)
-        .listen((_) {
-      if (mounted) {
-        next();
+        .listen((_) async {
+      if (mounted && !_isAdvancing) {
+        _isAdvancing = true;
+        // Small debounce to prevent race condition when state is transitioning
+        await Future.delayed(const Duration(milliseconds: 300));
+        if (mounted) next();
+        _isAdvancing = false;
       }
     });
   }

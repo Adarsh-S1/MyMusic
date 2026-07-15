@@ -298,7 +298,7 @@ class _ArtistsTab extends ConsumerWidget {
                 contentPadding: const EdgeInsets.only(left: 72, right: 16),
                 title: Text(song.title, maxLines: 1, overflow: TextOverflow.ellipsis),
                 subtitle: Text(song.duration.toHumanString()),
-                onTap: () => ref.read(playerProvider.notifier).playSong(song),
+                onTap: () => ref.read(playerProvider.notifier).playQueue(artistSongs, artistSongs.indexOf(song)),
               )).toList(),
             );
           },

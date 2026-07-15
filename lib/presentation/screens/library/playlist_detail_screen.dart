@@ -24,11 +24,13 @@ class PlaylistDetailScreen extends ConsumerWidget {
         title: Text(playlistName),
         actions: [
           IconButton(
+            iconSize: 40,
             icon: const Icon(Icons.add),
             onPressed: () => _showAddSongsDialog(context, ref),
             tooltip: 'Add Songs',
           ),
           IconButton(
+            iconSize: 36,
             icon: const Icon(Icons.delete_outline),
             onPressed: () => _confirmDeletePlaylist(context, ref),
             tooltip: 'Delete Playlist',
@@ -144,7 +146,9 @@ class PlaylistDetailScreen extends ConsumerWidget {
           ),
           TextButton(
             onPressed: () async {
-              await ref.read(libraryRepositoryProvider).deletePlaylist(playlistId);
+              await ref
+                  .read(libraryRepositoryProvider)
+                  .deletePlaylist(playlistId);
               ref.invalidate(playlistsProvider);
               if (ctx.mounted) Navigator.pop(ctx); // Close dialog
               if (context.mounted) Navigator.pop(context); // Go back to library

@@ -28,30 +28,32 @@ class YtGrooveAudioHandler extends BaseAudioHandler with SeekHandler {
     // Broadcast playback state changes
     _player.playbackEventStream.listen((event) {
       final playing = _player.playing;
-      playbackState.add(playbackState.value.copyWith(
-        controls: [
-          MediaControl.skipToPrevious,
-          if (playing) MediaControl.pause else MediaControl.play,
-          MediaControl.skipToNext,
-        ],
-        systemActions: const {
-          MediaAction.seek,
-          MediaAction.seekForward,
-          MediaAction.seekBackward,
-        },
-        androidCompactActionIndices: const [0, 1, 2],
-        processingState: const {
-          ProcessingState.idle: AudioProcessingState.idle,
-          ProcessingState.loading: AudioProcessingState.loading,
-          ProcessingState.buffering: AudioProcessingState.buffering,
-          ProcessingState.ready: AudioProcessingState.ready,
-          ProcessingState.completed: AudioProcessingState.completed,
-        }[_player.processingState]!,
-        playing: playing,
-        updatePosition: _player.position,
-        bufferedPosition: _player.bufferedPosition,
-        speed: _player.speed,
-      ));
+      playbackState.add(
+        playbackState.value.copyWith(
+          controls: [
+            MediaControl.skipToPrevious,
+            if (playing) MediaControl.pause else MediaControl.play,
+            MediaControl.skipToNext,
+          ],
+          systemActions: const {
+            MediaAction.seek,
+            MediaAction.seekForward,
+            MediaAction.seekBackward,
+          },
+          androidCompactActionIndices: const [0, 1, 2],
+          processingState: const {
+            ProcessingState.idle: AudioProcessingState.idle,
+            ProcessingState.loading: AudioProcessingState.loading,
+            ProcessingState.buffering: AudioProcessingState.buffering,
+            ProcessingState.ready: AudioProcessingState.ready,
+            ProcessingState.completed: AudioProcessingState.completed,
+          }[_player.processingState]!,
+          playing: playing,
+          updatePosition: _player.position,
+          bufferedPosition: _player.bufferedPosition,
+          speed: _player.speed,
+        ),
+      );
     });
   }
 
@@ -60,25 +62,29 @@ class YtGrooveAudioHandler extends BaseAudioHandler with SeekHandler {
   Future<void> playFromSong(Song song) async {
     final audioFile = File(song.localAudioPath);
     final thumbFile = File(song.localThumbnailPath);
-    
+
     print('[AudioHandler] playFromSong: "${song.title}"');
     print('[AudioHandler] Audio path: ${song.localAudioPath}');
     print('[AudioHandler] Audio file exists: ${audioFile.existsSync()}');
     if (audioFile.existsSync()) {
       print('[AudioHandler] Audio file size: ${audioFile.lengthSync()} bytes');
     }
-    
+
     if (!audioFile.existsSync()) {
       throw Exception('Audio file not found: ${song.localAudioPath}');
     }
-    
-    mediaItem.add(MediaItem(
-      id: song.videoId,
-      title: song.title,
-      artist: song.artist ?? 'Unknown Artist',
-      duration: song.duration,
-      artUri: thumbFile.existsSync() ? Uri.file(song.localThumbnailPath) : null,
-    ));
+
+    mediaItem.add(
+      MediaItem(
+        id: song.videoId,
+        title: song.title,
+        artist: song.artist ?? 'Unknown Artist',
+        duration: song.duration,
+        artUri: thumbFile.existsSync()
+            ? Uri.file(song.localThumbnailPath)
+            : null,
+      ),
+    );
     await _player.setFilePath(song.localAudioPath);
     await _player.play();
   }
@@ -132,11 +138,7 @@ Future<void> main() async {
     ),
   );
 
-  runApp(
-    const ProviderScope(
-      child: YtGrooveApp(),
-    ),
-  );
+  runApp(const ProviderScope(child: YtGrooveApp()));
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -156,19 +158,23 @@ final _router = GoRouter(
       routes: [
         GoRoute(
           path: '/home',
-          pageBuilder: (context, state) => const NoTransitionPage(child: HomeScreen()),
+          pageBuilder: (context, state) =>
+              const NoTransitionPage(child: HomeScreen()),
         ),
         GoRoute(
           path: '/download',
-          pageBuilder: (context, state) => const NoTransitionPage(child: DownloaderScreen()),
+          pageBuilder: (context, state) =>
+              const NoTransitionPage(child: DownloaderScreen()),
         ),
         GoRoute(
           path: '/library',
-          pageBuilder: (context, state) => const NoTransitionPage(child: LibraryScreen()),
+          pageBuilder: (context, state) =>
+              const NoTransitionPage(child: LibraryScreen()),
         ),
         GoRoute(
           path: '/settings',
-          pageBuilder: (context, state) => const NoTransitionPage(child: SettingsScreen()),
+          pageBuilder: (context, state) =>
+              const NoTransitionPage(child: SettingsScreen()),
         ),
       ],
     ),
@@ -226,11 +232,14 @@ class _AppShellState extends ConsumerState<AppShell> {
     }
 
     // 2. Listen for media shared while the app is running
-    _intentDataStreamSubscription = handler.sharedMediaStream.listen((SharedMedia media) {
-      _handleSharedText(media);
-    }, onError: (err) {
-      debugPrint("ShareHandler stream error: $err");
-    });
+    _intentDataStreamSubscription = handler.sharedMediaStream.listen(
+      (SharedMedia media) {
+        _handleSharedText(media);
+      },
+      onError: (err) {
+        debugPrint("ShareHandler stream error: $err");
+      },
+    );
   }
 
   void _handleSharedText(SharedMedia media) {
@@ -251,8 +260,8 @@ class _AppShellState extends ConsumerState<AppShell> {
   static int _calculateSelectedIndex(BuildContext context) {
     final location = GoRouterState.of(context).uri.toString();
     if (location.startsWith('/home')) return 0;
-    if (location.startsWith('/download')) return 1;
-    if (location.startsWith('/library')) return 2;
+    if (location.startsWith('/library')) return 1;
+    if (location.startsWith('/download')) return 2;
     if (location.startsWith('/settings')) return 3;
     return 0;
   }
@@ -271,17 +280,37 @@ class _AppShellState extends ConsumerState<AppShell> {
             selectedIndex: selectedIndex,
             onDestinationSelected: (index) {
               switch (index) {
-                case 0: context.go('/home');
-                case 1: context.go('/download');
-                case 2: context.go('/library');
-                case 3: context.go('/settings');
+                case 0:
+                  context.go('/home');
+                case 1:
+                  context.go('/library');
+                case 2:
+                  context.go('/download');
+                case 3:
+                  context.go('/settings');
               }
             },
             destinations: const [
-              NavigationDestination(icon: Icon(Icons.home_outlined), selectedIcon: Icon(Icons.home), label: 'Home'),
-              NavigationDestination(icon: Icon(Icons.download_outlined), selectedIcon: Icon(Icons.download), label: 'Download'),
-              NavigationDestination(icon: Icon(Icons.library_music_outlined), selectedIcon: Icon(Icons.library_music), label: 'Library'),
-              NavigationDestination(icon: Icon(Icons.settings_outlined), selectedIcon: Icon(Icons.settings), label: 'Settings'),
+              NavigationDestination(
+                icon: Icon(Icons.home_outlined),
+                selectedIcon: Icon(Icons.home),
+                label: 'Home',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.library_music_outlined),
+                selectedIcon: Icon(Icons.library_music),
+                label: 'Library',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.download_outlined),
+                selectedIcon: Icon(Icons.download),
+                label: 'Download',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.settings_outlined),
+                selectedIcon: Icon(Icons.settings),
+                label: 'Settings',
+              ),
             ],
           ),
         ],
@@ -304,7 +333,7 @@ class YtGrooveApp extends ConsumerWidget {
 
     return isarAsync.when(
       data: (_) => MaterialApp.router(
-        title: 'YT-Groove',
+        title: 'My Music',
         debugShowCheckedModeBanner: false,
         theme: ThemeData(
           colorScheme: ColorScheme.fromSeed(
@@ -319,7 +348,10 @@ class YtGrooveApp extends ConsumerWidget {
       loading: () => MaterialApp(
         debugShowCheckedModeBanner: false,
         theme: ThemeData(
-          colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF6C5CE7), brightness: Brightness.dark),
+          colorScheme: ColorScheme.fromSeed(
+            seedColor: const Color(0xFF6C5CE7),
+            brightness: Brightness.dark,
+          ),
           useMaterial3: true,
         ),
         home: const Scaffold(
@@ -329,7 +361,7 @@ class YtGrooveApp extends ConsumerWidget {
               children: [
                 CircularProgressIndicator(),
                 SizedBox(height: 16),
-                Text('Loading YT-Groove...'),
+                Text('Loading My Music...'),
               ],
             ),
           ),

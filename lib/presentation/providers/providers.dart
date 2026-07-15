@@ -321,7 +321,7 @@ class PlayerState {
     this.currentIndex = 0,
     this.isPlaying = false,
     this.isShuffled = false,
-    this.repeatMode = SongRepeatMode.off,
+    this.repeatMode = SongRepeatMode.all,
     this.position = Duration.zero,
     this.duration = Duration.zero,
   });

@@ -134,31 +134,60 @@ class PlaylistDetailScreen extends ConsumerWidget {
   }
 
   void _confirmDeletePlaylist(BuildContext context, WidgetRef ref) {
+    bool deleteSongs = false;
+
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Delete Playlist'),
-        content: Text('Are you sure you want to delete "$playlistName"?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setState) => AlertDialog(
+          title: const Text('Delete Playlist'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Are you sure you want to delete "$playlistName"?'),
+              const SizedBox(height: 16),
+              CheckboxListTile(
+                value: deleteSongs,
+                onChanged: (value) => setState(() => deleteSongs = value ?? false),
+                title: const Text('Also delete all songs permanently'),
+                subtitle: const Text('This will remove the audio files from your device'),
+                contentPadding: EdgeInsets.zero,
+                controlAffinity: ListTileControlAffinity.leading,
+                dense: true,
+              ),
+            ],
           ),
-          TextButton(
-            onPressed: () async {
-              await ref
-                  .read(libraryRepositoryProvider)
-                  .deletePlaylist(playlistId);
-              ref.invalidate(playlistsProvider);
-              if (ctx.mounted) Navigator.pop(ctx); // Close dialog
-              if (context.mounted) Navigator.pop(context); // Go back to library
-            },
-            child: Text(
-              'Delete',
-              style: TextStyle(color: Theme.of(context).colorScheme.error),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
             ),
-          ),
-        ],
+            TextButton(
+              onPressed: () async {
+                final repo = ref.read(libraryRepositoryProvider);
+
+                if (deleteSongs) {
+                  // Get songs in the playlist and delete each one
+                  final songs = await repo.getSongsForPlaylist(playlistId);
+                  for (final song in songs) {
+                    await repo.deleteSong(song.videoId);
+                  }
+                  ref.invalidate(libraryProvider);
+                }
+
+                await repo.deletePlaylist(playlistId);
+                ref.invalidate(playlistsProvider);
+                if (ctx.mounted) Navigator.pop(ctx);
+                if (context.mounted) Navigator.pop(context);
+              },
+              child: Text(
+                'Delete',
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

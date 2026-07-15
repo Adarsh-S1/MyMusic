@@ -293,6 +293,11 @@ final playlistsProvider = FutureProvider<List<Playlist>>((ref) {
   return ref.watch(libraryRepositoryProvider).getAllPlaylists();
 });
 
+/// Songs for a specific playlist.
+final playlistSongsProvider = FutureProvider.family<List<Song>, String>((ref, playlistId) {
+  return ref.watch(libraryRepositoryProvider).getSongsForPlaylist(playlistId);
+});
+
 // ═══════════════════════════════════════════════════════════
 // PLAYER PROVIDERS
 // ═══════════════════════════════════════════════════════════

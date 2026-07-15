@@ -13,6 +13,7 @@ import 'package:mymusic/presentation/screens/downloader/downloader_screen.dart';
 import 'package:mymusic/presentation/screens/library/library_screen.dart';
 import 'package:mymusic/presentation/screens/now_playing/now_playing_screen.dart';
 import 'package:mymusic/presentation/screens/settings/settings_screen.dart';
+import 'package:mymusic/presentation/screens/library/playlist_detail_screen.dart';
 import 'package:mymusic/presentation/widgets/mini_player.dart';
 import 'package:mymusic/domain/entities/song.dart';
 
@@ -176,6 +177,16 @@ final _router = GoRouter(
       parentNavigatorKey: _rootNavigatorKey,
       path: '/now-playing',
       builder: (context, state) => const NowPlayingScreen(),
+    ),
+    // Playlist detail screen
+    GoRoute(
+      parentNavigatorKey: _rootNavigatorKey,
+      path: '/playlist/:id',
+      builder: (context, state) {
+        final id = state.pathParameters['id']!;
+        final name = state.extra as String? ?? 'Playlist';
+        return PlaylistDetailScreen(playlistId: id, playlistName: name);
+      },
     ),
   ],
 );

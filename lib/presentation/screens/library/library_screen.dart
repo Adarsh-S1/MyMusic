@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:mymusic/core/extensions/extensions.dart';
 import 'package:mymusic/domain/entities/song.dart';
 import 'package:mymusic/presentation/providers/providers.dart';
@@ -156,10 +157,13 @@ class _SongsTab extends ConsumerWidget {
                     } else if (value == 'queue') {
                       ref.read(playerProvider.notifier).addToQueue(song);
                       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Added to queue')));
+                    } else if (value == 'playlist') {
+                      _showAddToPlaylistDialog(context, ref, song);
                     }
                   },
                   itemBuilder: (_) => [
                     const PopupMenuItem(value: 'queue', child: ListTile(leading: Icon(Icons.queue_music), title: Text('Add to queue'))),
+                    const PopupMenuItem(value: 'playlist', child: ListTile(leading: Icon(Icons.playlist_add), title: Text('Add to playlist'))),
                     PopupMenuItem(value: 'delete', child: ListTile(leading: Icon(Icons.delete, color: theme.colorScheme.error), title: Text('Delete', style: TextStyle(color: theme.colorScheme.error)))),
                   ],
                 ),
@@ -173,6 +177,46 @@ class _SongsTab extends ConsumerWidget {
       },
       loading: () => const Center(child: CircularProgressIndicator()),
       error: (e, _) => Center(child: Text('Error: $e')),
+    );
+  }
+
+  void _showAddToPlaylistDialog(BuildContext context, WidgetRef ref, Song song) async {
+    final playlists = await ref.read(libraryRepositoryProvider).getAllPlaylists();
+    if (!context.mounted) return;
+
+    if (playlists.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No playlists available. Create one first.')));
+      return;
+    }
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Add to Playlist'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: ListView.builder(
+            shrinkWrap: true,
+            itemCount: playlists.length,
+            itemBuilder: (context, index) {
+              final playlist = playlists[index];
+              return ListTile(
+                leading: const Icon(Icons.playlist_play),
+                title: Text(playlist.name),
+                onTap: () {
+                  ref.read(libraryRepositoryProvider).addSongToPlaylist(playlist.id, song.videoId);
+                  ref.invalidate(playlistsProvider);
+                  Navigator.pop(ctx);
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Added to ${playlist.name}')));
+                },
+              );
+            },
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+        ],
+      ),
     );
   }
 }
@@ -216,7 +260,7 @@ class _PlaylistsTab extends ConsumerWidget {
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                         child: InkWell(
                           borderRadius: BorderRadius.circular(16),
-                          onTap: () {},
+                          onTap: () => context.push('/playlist/${playlist.id}', extra: playlist.name),
                           child: Padding(
                             padding: const EdgeInsets.all(16),
                             child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.end, children: [

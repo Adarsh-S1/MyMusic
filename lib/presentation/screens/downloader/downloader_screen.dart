@@ -154,13 +154,32 @@ class _DownloadTaskTile extends ConsumerWidget {
 
     IconData statusIcon;
     Color statusColor;
+    String statusLabel;
     switch (task.status) {
-      case DownloadStatus.pending: statusIcon = Icons.hourglass_empty; statusColor = theme.colorScheme.onSurfaceVariant;
-      case DownloadStatus.downloading: statusIcon = Icons.download; statusColor = theme.colorScheme.primary;
-      case DownloadStatus.processing: statusIcon = Icons.settings; statusColor = theme.colorScheme.tertiary;
-      case DownloadStatus.completed: statusIcon = Icons.check_circle; statusColor = Colors.green;
-      case DownloadStatus.failed: statusIcon = Icons.error; statusColor = theme.colorScheme.error;
-      case DownloadStatus.cancelled: statusIcon = Icons.cancel; statusColor = theme.colorScheme.onSurfaceVariant;
+      case DownloadStatus.pending:
+        statusIcon = Icons.hourglass_empty;
+        statusColor = theme.colorScheme.onSurfaceVariant;
+        statusLabel = 'Waiting...';
+      case DownloadStatus.downloading:
+        statusIcon = Icons.download;
+        statusColor = theme.colorScheme.primary;
+        statusLabel = 'Downloading...';
+      case DownloadStatus.processing:
+        statusIcon = Icons.settings;
+        statusColor = theme.colorScheme.tertiary;
+        statusLabel = 'Saving to library...';
+      case DownloadStatus.completed:
+        statusIcon = Icons.check_circle;
+        statusColor = Colors.green;
+        statusLabel = 'Completed';
+      case DownloadStatus.failed:
+        statusIcon = Icons.error;
+        statusColor = theme.colorScheme.error;
+        statusLabel = 'Failed';
+      case DownloadStatus.cancelled:
+        statusIcon = Icons.cancel;
+        statusColor = theme.colorScheme.onSurfaceVariant;
+        statusLabel = 'Cancelled';
     }
 
     return Card(
@@ -174,8 +193,8 @@ class _DownloadTaskTile extends ConsumerWidget {
             const SizedBox(width: 12),
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text(task.title ?? task.youtubeUrl, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w600)),
-              if (task.status == DownloadStatus.downloading)
-                Text('${task.formattedSpeed} • ${(task.progress * 100).toInt()}%', style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+              const SizedBox(height: 2),
+              Text(statusLabel, style: theme.textTheme.bodySmall?.copyWith(color: statusColor)),
               if (task.errorMessage != null)
                 Text(task.errorMessage!, style: TextStyle(color: theme.colorScheme.error, fontSize: 12)),
             ])),
@@ -184,7 +203,15 @@ class _DownloadTaskTile extends ConsumerWidget {
           ]),
           if (isActive) ...[
             const SizedBox(height: 8),
-            LinearProgressIndicator(value: task.status == DownloadStatus.processing ? null : task.progress, borderRadius: BorderRadius.circular(4)),
+            // Use indeterminate bar since Chaquopy can't report real-time progress
+            ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: LinearProgressIndicator(
+                value: task.progress > 0 && task.progress < 1.0 ? task.progress : null,
+                minHeight: 6,
+                backgroundColor: theme.colorScheme.surfaceContainerHighest,
+              ),
+            ),
           ],
         ]),
       ),

@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -54,12 +55,26 @@ class YtGrooveAudioHandler extends BaseAudioHandler with SeekHandler {
   AudioPlayer get player => _player;
 
   Future<void> playFromSong(Song song) async {
+    final audioFile = File(song.localAudioPath);
+    final thumbFile = File(song.localThumbnailPath);
+    
+    print('[AudioHandler] playFromSong: "${song.title}"');
+    print('[AudioHandler] Audio path: ${song.localAudioPath}');
+    print('[AudioHandler] Audio file exists: ${audioFile.existsSync()}');
+    if (audioFile.existsSync()) {
+      print('[AudioHandler] Audio file size: ${audioFile.lengthSync()} bytes');
+    }
+    
+    if (!audioFile.existsSync()) {
+      throw Exception('Audio file not found: ${song.localAudioPath}');
+    }
+    
     mediaItem.add(MediaItem(
       id: song.videoId,
       title: song.title,
       artist: song.artist ?? 'Unknown Artist',
       duration: song.duration,
-      artUri: Uri.file(song.localThumbnailPath),
+      artUri: thumbFile.existsSync() ? Uri.file(song.localThumbnailPath) : null,
     ));
     await _player.setFilePath(song.localAudioPath);
     await _player.play();

@@ -17,6 +17,8 @@ import 'package:mymusic/domain/entities/song.dart';
 import 'package:mymusic/domain/entities/playlist.dart';
 import 'package:mymusic/domain/repositories/i_downloader_repository.dart';
 import 'package:mymusic/domain/repositories/i_library_repository.dart';
+import 'package:just_audio/just_audio.dart';
+import 'package:mymusic/main.dart';
 
 // ═══════════════════════════════════════════════════════════
 // DATA LAYER PROVIDERS
@@ -346,8 +348,63 @@ class PlayerState {
 }
 
 /// Player notifier — wraps just_audio + audio_service.
+/// This notifier now actually drives the audio handler to play/pause/seek.
 class PlayerNotifier extends StateNotifier<PlayerState> {
-  PlayerNotifier() : super(const PlayerState());
+  StreamSubscription<Duration>? _positionSub;
+  StreamSubscription<Duration?>? _durationSub;
+  StreamSubscription<bool>? _playingSub;
+  StreamSubscription<void>? _completionSub;
+
+  PlayerNotifier() : super(const PlayerState()) {
+    _initAudioListeners();
+  }
+
+  /// Subscribe to the audio player's streams so our state stays in sync.
+  void _initAudioListeners() {
+    final player = audioHandler.player;
+
+    // Track playback position
+    _positionSub = player.positionStream.listen((pos) {
+      if (mounted) {
+        state = state.copyWith(position: pos);
+      }
+    });
+
+    // Track total duration
+    _durationSub = player.durationStream.listen((dur) {
+      if (mounted && dur != null) {
+        state = state.copyWith(duration: dur);
+      }
+    });
+
+    // Track playing state (sync with actual player, e.g. when audio_service controls are used)
+    _playingSub = player.playingStream.listen((playing) {
+      if (mounted && state.isPlaying != playing) {
+        state = state.copyWith(isPlaying: playing);
+      }
+    });
+
+    // Handle song completion — auto-advance to next track
+    _completionSub = player.playerStateStream
+        .where((ps) => ps.processingState == ProcessingState.completed)
+        .listen((_) {
+      if (mounted) {
+        next();
+      }
+    });
+  }
+
+  /// Actually load and play a song on the audio player.
+  Future<void> _loadAndPlay(Song song) async {
+    try {
+      await audioHandler.playFromSong(song);
+    } catch (e) {
+      // If playback fails, log error and update state
+      state = state.copyWith(isPlaying: false);
+      // ignore: avoid_print
+      print('PlayerNotifier: Failed to play "${song.title}": $e');
+    }
+  }
 
   /// Play a single song.
   void playSong(Song song) {
@@ -356,33 +413,46 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
       queue: [song],
       currentIndex: 0,
       isPlaying: true,
+      position: Duration.zero,
+      duration: Duration.zero,
     );
+    _loadAndPlay(song);
   }
 
   /// Play a list of songs starting at an index.
   void playQueue(List<Song> songs, int startIndex) {
     if (songs.isEmpty) return;
+    final song = songs[startIndex];
     state = state.copyWith(
-      currentSong: songs[startIndex],
+      currentSong: song,
       queue: songs,
       currentIndex: startIndex,
       isPlaying: true,
+      position: Duration.zero,
+      duration: Duration.zero,
     );
+    _loadAndPlay(song);
   }
 
   void togglePlayPause() {
-    state = state.copyWith(isPlaying: !state.isPlaying);
+    if (state.isPlaying) {
+      audioHandler.pause();
+    } else {
+      audioHandler.play();
+    }
+    // State will be updated by the playingStream listener
   }
 
   void pause() {
-    state = state.copyWith(isPlaying: false);
+    audioHandler.pause();
   }
 
   void resume() {
-    state = state.copyWith(isPlaying: true);
+    audioHandler.play();
   }
 
   void seek(Duration position) {
+    audioHandler.seek(position);
     state = state.copyWith(position: position);
   }
 
@@ -396,40 +466,56 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
 
   void next() {
     if (state.repeatMode == SongRepeatMode.one) {
-      state = state.copyWith(position: Duration.zero);
+      // Restart current song
+      seek(Duration.zero);
+      audioHandler.play();
       return;
     }
 
     if (state.currentIndex < state.queue.length - 1) {
       final newIndex = state.currentIndex + 1;
+      final nextSong = state.queue[newIndex];
       state = state.copyWith(
         currentIndex: newIndex,
-        currentSong: state.queue[newIndex],
+        currentSong: nextSong,
         position: Duration.zero,
+        duration: Duration.zero,
       );
+      _loadAndPlay(nextSong);
     } else if (state.repeatMode == SongRepeatMode.all && state.queue.isNotEmpty) {
+      final firstSong = state.queue[0];
       state = state.copyWith(
         currentIndex: 0,
-        currentSong: state.queue[0],
+        currentSong: firstSong,
         position: Duration.zero,
+        duration: Duration.zero,
       );
+      _loadAndPlay(firstSong);
+    } else {
+      // End of queue, no repeat — stop playing
+      audioHandler.stop();
+      state = state.copyWith(isPlaying: false, position: Duration.zero);
     }
   }
 
   void previous() {
     // If more than 3 seconds in, restart current song
     if (state.position.inSeconds > 3) {
-      state = state.copyWith(position: Duration.zero);
+      seek(Duration.zero);
+      audioHandler.play();
       return;
     }
 
     if (state.currentIndex > 0) {
       final newIndex = state.currentIndex - 1;
+      final prevSong = state.queue[newIndex];
       state = state.copyWith(
         currentIndex: newIndex,
-        currentSong: state.queue[newIndex],
+        currentSong: prevSong,
         position: Duration.zero,
+        duration: Duration.zero,
       );
+      _loadAndPlay(prevSong);
     }
   }
 
@@ -467,11 +553,13 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
       // If removing current song, play next
       if (newQueue.isNotEmpty) {
         newIndex = newIndex.clamp(0, newQueue.length - 1);
+        final nextSong = newQueue[newIndex];
         state = state.copyWith(
           queue: newQueue,
           currentIndex: newIndex,
-          currentSong: newQueue[newIndex],
+          currentSong: nextSong,
         );
+        _loadAndPlay(nextSong);
         return;
       }
     }
@@ -479,7 +567,17 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
   }
 
   void stop() {
+    audioHandler.stop();
     state = const PlayerState();
+  }
+
+  @override
+  void dispose() {
+    _positionSub?.cancel();
+    _durationSub?.cancel();
+    _playingSub?.cancel();
+    _completionSub?.cancel();
+    super.dispose();
   }
 }
 

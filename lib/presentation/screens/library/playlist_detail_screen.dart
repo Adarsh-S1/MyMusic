@@ -96,8 +96,8 @@ class PlaylistDetailScreen extends ConsumerWidget {
                       ),
                       trailing: IconButton(
                         icon: const Icon(Icons.remove_circle_outline),
-                        onPressed: () {
-                          ref
+                        onPressed: () async {
+                          await ref
                               .read(libraryRepositoryProvider)
                               .removeSongFromPlaylist(playlistId, song.videoId);
                           ref.invalidate(playlistSongsProvider(playlistId));
@@ -143,11 +143,11 @@ class PlaylistDetailScreen extends ConsumerWidget {
             child: const Text('Cancel'),
           ),
           TextButton(
-            onPressed: () {
-              ref.read(libraryRepositoryProvider).deletePlaylist(playlistId);
+            onPressed: () async {
+              await ref.read(libraryRepositoryProvider).deletePlaylist(playlistId);
               ref.invalidate(playlistsProvider);
-              Navigator.pop(ctx); // Close dialog
-              Navigator.pop(context); // Go back to library
+              if (ctx.mounted) Navigator.pop(ctx); // Close dialog
+              if (context.mounted) Navigator.pop(context); // Go back to library
             },
             child: Text(
               'Delete',

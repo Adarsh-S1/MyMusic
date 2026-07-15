@@ -137,10 +137,12 @@ class _SongsTab extends ConsumerWidget {
                   ),
                 );
               },
-              onDismissed: (_) {
-                ref.read(libraryRepositoryProvider).deleteSong(song.videoId);
+              onDismissed: (_) async {
+                await ref.read(libraryRepositoryProvider).deleteSong(song.videoId);
                 ref.invalidate(libraryProvider);
-                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Deleted "${song.title}"')));
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Deleted "${song.title}"')));
+                }
               },
               child: ListTile(
                 leading: SongThumbnail(
@@ -152,9 +154,9 @@ class _SongsTab extends ConsumerWidget {
                 title: Text(song.title, maxLines: 1, overflow: TextOverflow.ellipsis),
                 subtitle: Text('${song.artist ?? 'Unknown Artist'} • ${song.duration.toHumanString()}', style: theme.textTheme.bodySmall),
                 trailing: PopupMenuButton<String>(
-                  onSelected: (value) {
+                  onSelected: (value) async {
                     if (value == 'delete') {
-                      ref.read(libraryRepositoryProvider).deleteSong(song.videoId);
+                      await ref.read(libraryRepositoryProvider).deleteSong(song.videoId);
                       ref.invalidate(libraryProvider);
                     } else if (value == 'queue') {
                       ref.read(playerProvider.notifier).addToQueue(song);
@@ -205,11 +207,13 @@ class _SongsTab extends ConsumerWidget {
               return ListTile(
                 leading: const Icon(Icons.playlist_play),
                 title: Text(playlist.name),
-                onTap: () {
-                  ref.read(libraryRepositoryProvider).addSongToPlaylist(playlist.id, song.videoId);
+                onTap: () async {
+                  await ref.read(libraryRepositoryProvider).addSongToPlaylist(playlist.id, song.videoId);
                   ref.invalidate(playlistsProvider);
-                  Navigator.pop(ctx);
-                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Added to ${playlist.name}')));
+                  if (ctx.mounted) Navigator.pop(ctx);
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Added to ${playlist.name}')));
+                  }
                 },
               );
             },
@@ -293,11 +297,11 @@ class _PlaylistsTab extends ConsumerWidget {
         content: TextField(controller: controller, decoration: const InputDecoration(hintText: 'Playlist name')),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-          FilledButton(onPressed: () {
+          FilledButton(onPressed: () async {
             if (controller.text.isNotEmpty) {
-              ref.read(libraryRepositoryProvider).createPlaylist(controller.text);
+              await ref.read(libraryRepositoryProvider).createPlaylist(controller.text);
               ref.invalidate(playlistsProvider);
-              Navigator.pop(ctx);
+              if (ctx.mounted) Navigator.pop(ctx);
             }
           }, child: const Text('Create')),
         ],

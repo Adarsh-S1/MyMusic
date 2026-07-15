@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:mymusic/core/extensions/extensions.dart';
 import 'package:mymusic/domain/entities/song.dart';
 import 'package:mymusic/presentation/providers/providers.dart';
+import 'package:mymusic/presentation/widgets/song_thumbnail.dart';
 
 class LibraryScreen extends ConsumerStatefulWidget {
   const LibraryScreen({super.key});
@@ -142,10 +143,11 @@ class _SongsTab extends ConsumerWidget {
                 ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Deleted "${song.title}"')));
               },
               child: ListTile(
-                leading: Container(
-                  width: 48, height: 48,
-                  decoration: BoxDecoration(color: theme.colorScheme.primaryContainer, borderRadius: BorderRadius.circular(8)),
-                  child: Icon(Icons.music_note, color: theme.colorScheme.primary),
+                leading: SongThumbnail(
+                  thumbnailPath: song.localThumbnailPath,
+                  width: 48,
+                  height: 48,
+                  borderRadius: 8,
                 ),
                 title: Text(song.title, maxLines: 1, overflow: TextOverflow.ellipsis),
                 subtitle: Text('${song.artist ?? 'Unknown Artist'} • ${song.duration.toHumanString()}', style: theme.textTheme.bodySmall),

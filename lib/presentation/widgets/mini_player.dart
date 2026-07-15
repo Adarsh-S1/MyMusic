@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:mymusic/presentation/providers/providers.dart';
 import 'package:mymusic/presentation/screens/now_playing/now_playing_screen.dart';
+import 'package:mymusic/presentation/widgets/song_thumbnail.dart';
 
 /// Persistent mini player widget shown above the BottomNavigationBar.
 class MiniPlayer extends ConsumerWidget {
@@ -44,14 +45,12 @@ class MiniPlayer extends ConsumerWidget {
               child: Row(
                 children: [
                   // Album art
-                  Container(
+                  SongThumbnail(
+                    thumbnailPath: song.localThumbnailPath,
                     width: 44,
                     height: 44,
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.primaryContainer,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Icon(Icons.music_note, color: theme.colorScheme.primary, size: 22),
+                    borderRadius: 8,
+                    iconSize: 22,
                   ),
                   const SizedBox(width: 12),
 

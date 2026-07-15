@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:mymusic/core/extensions/extensions.dart';
 import 'package:mymusic/presentation/providers/providers.dart';
+import 'package:mymusic/presentation/widgets/song_thumbnail.dart';
 
 class PlaylistDetailScreen extends ConsumerWidget {
   final String playlistId;
@@ -78,17 +79,11 @@ class PlaylistDetailScreen extends ConsumerWidget {
                   itemBuilder: (context, index) {
                     final song = songs[index];
                     return ListTile(
-                      leading: Container(
+                      leading: SongThumbnail(
+                        thumbnailPath: song.localThumbnailPath,
                         width: 48,
                         height: 48,
-                        decoration: BoxDecoration(
-                          color: theme.colorScheme.primaryContainer,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Icon(
-                          Icons.music_note,
-                          color: theme.colorScheme.primary,
-                        ),
+                        borderRadius: 8,
                       ),
                       title: Text(
                         song.title,

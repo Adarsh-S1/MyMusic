@@ -1,9 +1,12 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:isar/isar.dart';
 import 'package:path_provider/path_provider.dart';
 
+import 'package:mymusic/core/utils/directory_scanner.dart';
+import 'package:mymusic/core/utils/permission_helper.dart';
 import 'package:mymusic/data/datasources/local/song_dao.dart';
 import 'package:mymusic/data/datasources/local/playlist_dao.dart';
 import 'package:mymusic/data/datasources/remote/youtube_datasource.dart';
@@ -25,12 +28,29 @@ import 'package:mymusic/main.dart';
 // ═══════════════════════════════════════════════════════════
 
 /// Isar database instance — initialized once at app start.
+/// After opening, scans public directories to restore songs that
+/// survived a previous app uninstall.
 final isarProvider = FutureProvider<Isar>((ref) async {
   final dir = await getApplicationDocumentsDirectory();
   final isar = await Isar.open(
     [SongModelSchema, PlaylistModelSchema],
     directory: dir.path,
   );
+
+  // Scan public storage and restore songs into the database.
+  // This runs once at startup so previously-downloaded songs
+  // reappear even if the app was reinstalled.
+  try {
+    await PermissionHelper.requestManageStorage();
+    final songDao = SongDao(isar);
+    final restored = await DirectoryScanner.scanAndRestore(songDao);
+    if (restored > 0) {
+      debugPrint('[Startup] Restored $restored songs from public storage');
+    }
+  } catch (e) {
+    debugPrint('[Startup] Directory scan failed: $e');
+  }
+
   ref.onDispose(() => isar.close());
   return isar;
 });
@@ -418,8 +438,9 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
   StreamSubscription<Duration?>? _durationSub;
   StreamSubscription<bool>? _playingSub;
   StreamSubscription<void>? _completionSub;
+  final SongDao _songDao;
 
-  PlayerNotifier() : super(const PlayerState()) {
+  PlayerNotifier(this._songDao) : super(const PlayerState()) {
     _initAudioListeners();
     audioHandler.onNext = next;
     audioHandler.onPrevious = previous;
@@ -469,7 +490,12 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
   /// Actually load and play a song on the audio player.
   Future<void> _loadAndPlay(Song song) async {
     try {
-      await audioHandler.playFromSong(song);
+      final detectedDuration = await audioHandler.playFromSong(song);
+
+      // Backfill duration for restored songs (Duration.zero from DirectoryScanner)
+      if (song.duration == Duration.zero && detectedDuration > Duration.zero) {
+        await _songDao.saveSong(song.copyWith(duration: detectedDuration));
+      }
     } catch (e) {
       // If playback fails, log error and update state
       state = state.copyWith(isPlaying: false);
@@ -655,5 +681,6 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
 
 final playerProvider =
     StateNotifierProvider<PlayerNotifier, PlayerState>((ref) {
-  return PlayerNotifier();
+  final songDao = ref.watch(songDaoProvider);
+  return PlayerNotifier(songDao);
 });

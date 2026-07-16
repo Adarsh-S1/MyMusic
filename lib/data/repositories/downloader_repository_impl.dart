@@ -1,12 +1,11 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:dio/dio.dart';
-import 'package:path_provider/path_provider.dart';
 
 import 'package:mymusic/core/constants/app_constants.dart';
 import 'package:mymusic/core/extensions/extensions.dart';
+import 'package:mymusic/core/utils/media_scanner.dart';
 import 'package:mymusic/data/datasources/local/song_dao.dart';
 import 'package:mymusic/data/datasources/remote/youtube_datasource.dart';
 import 'package:mymusic/data/datasources/remote/chaquopy_datasource.dart';
@@ -105,16 +104,9 @@ class DownloaderRepositoryImpl implements IDownloaderRepository {
     yield task;
 
     try {
-      // Get storage directories
-      final extDir = await getExternalStorageDirectory();
-      if (extDir == null) throw Exception('Cannot access external storage');
-
-      final musicDir = Directory('${extDir.path}/${AppConstants.musicSubDir}');
-      final thumbDir = Directory(
-        '${extDir.path}/${AppConstants.thumbnailSubDir}',
-      );
-      await musicDir.create(recursive: true);
-      await thumbDir.create(recursive: true);
+      // Use public shared directories so files survive app uninstall
+      final musicDir = await AppConstants.getPublicMusicDir();
+      final thumbDir = await AppConstants.getPublicThumbnailDir();
 
       final safeTitle = metadata.title.toSafeFilename();
       final thumbnailPath = '${thumbDir.path}/$videoId.jpg';
@@ -145,7 +137,7 @@ class DownloaderRepositoryImpl implements IDownloaderRepository {
 
       yield task.copyWith(progress: 1.0);
 
-      // ─── Step 4: Save to database ───────────────────────
+      // ─── Step 3: Save to database ───────────────────────
       task = task.copyWith(status: DownloadStatus.processing);
       yield task;
 
@@ -162,7 +154,10 @@ class DownloaderRepositoryImpl implements IDownloaderRepository {
 
       await _songDao.saveSong(song);
 
-      // ─── Step 5: Emit completion ─────────────────────────
+      // Register with Android MediaStore so file appears in other music apps
+      await MediaScanner.scanFile(outputPath);
+
+      // ─── Step 4: Emit completion ─────────────────────────
       task = task.copyWith(status: DownloadStatus.completed, progress: 1.0);
       yield task;
     } catch (e) {

@@ -1,3 +1,5 @@
+import 'dart:io';
+
 /// App-wide constants.
 class AppConstants {
   AppConstants._();
@@ -5,9 +7,29 @@ class AppConstants {
   static const String appName = 'YT-Groove';
   static const String appVersion = '1.0.0';
 
-  // Storage paths
+  // Public shared storage directory names (persists after app uninstall)
+  static const String publicMusicDir = 'YT-Groove';
+  static const String publicThumbnailDir = 'YT-Groove';
+
+  // Legacy storage paths (kept for migration from old installs)
   static const String musicSubDir = 'yt-groove/audio';
   static const String thumbnailSubDir = 'yt-groove/thumbnails';
+
+  /// Get the public Music directory for storing downloaded audio files.
+  /// Files here survive app uninstall.
+  static Future<Directory> getPublicMusicDir() async {
+    final musicDir = Directory('/storage/emulated/0/Music/$publicMusicDir');
+    await musicDir.create(recursive: true);
+    return musicDir;
+  }
+
+  /// Get the public Pictures directory for storing thumbnails.
+  /// Files here survive app uninstall.
+  static Future<Directory> getPublicThumbnailDir() async {
+    final thumbDir = Directory('/storage/emulated/0/Pictures/$publicThumbnailDir');
+    await thumbDir.create(recursive: true);
+    return thumbDir;
+  }
 
   // Default metadata
   static const String defaultAlbum = 'YouTube Downloads';

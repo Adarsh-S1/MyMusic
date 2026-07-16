@@ -27,4 +27,19 @@ class PermissionHelper {
     if (audioGranted) return true;
     return Permission.storage.isGranted;
   }
+
+  /// Requests MANAGE_EXTERNAL_STORAGE for writing to public directories.
+  /// Returns true if granted or already granted.
+  static Future<bool> requestManageStorage() async {
+    if (!Platform.isAndroid) return true;
+    if (await Permission.manageExternalStorage.isGranted) return true;
+    final status = await Permission.manageExternalStorage.request();
+    return status.isGranted;
+  }
+
+  /// Checks if MANAGE_EXTERNAL_STORAGE is granted without requesting.
+  static Future<bool> hasManageStorage() async {
+    if (!Platform.isAndroid) return true;
+    return Permission.manageExternalStorage.isGranted;
+  }
 }

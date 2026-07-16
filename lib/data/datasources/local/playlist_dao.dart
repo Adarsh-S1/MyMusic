@@ -17,15 +17,17 @@ class PlaylistDao {
     return models.map(_toEntity).toList();
   }
 
-  /// Create a new playlist.
-  Future<void> createPlaylist(String name) async {
+  /// Create a new playlist. Returns the playlist ID as a string.
+  Future<String> createPlaylist(String name) async {
     final model = PlaylistModel()
       ..name = name
       ..dateCreated = DateTime.now()
       ..songVideoIds = [];
+    late int id;
     await _isar.writeTxn(() async {
-      await _isar.playlistModels.put(model);
+      id = await _isar.playlistModels.put(model);
     });
+    return id.toString();
   }
 
   /// Add a song video ID to a playlist.

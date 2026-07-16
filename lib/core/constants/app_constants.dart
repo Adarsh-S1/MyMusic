@@ -64,4 +64,32 @@ class YoutubePatterns {
 
     return null;
   }
+
+  /// Matches YouTube playlist URLs: youtube.com/playlist?list=PLAYLIST_ID
+  static final RegExp playlistUrl = RegExp(
+    r'^https?://(www\.|m\.)?youtube\.com/playlist\?.*list=([a-zA-Z0-9_-]+)',
+  );
+
+  /// Matches playlist ID embedded in watch URLs: youtube.com/watch?v=...&list=PLAYLIST_ID
+  static final RegExp watchWithPlaylist = RegExp(
+    r'^https?://(www\.|m\.)?youtube\.com/watch\?.*list=([a-zA-Z0-9_-]+)',
+  );
+
+  /// Extracts playlist ID from a YouTube URL, or null if not a playlist URL.
+  static String? extractPlaylistId(String url) {
+    RegExpMatch? match;
+
+    match = playlistUrl.firstMatch(url);
+    if (match != null) return match.group(2);
+
+    match = watchWithPlaylist.firstMatch(url);
+    if (match != null) return match.group(2);
+
+    return null;
+  }
+
+  /// Returns true if the URL is a playlist URL (not just a video with list param).
+  static bool isPlaylistUrl(String url) {
+    return playlistUrl.hasMatch(url.trim());
+  }
 }

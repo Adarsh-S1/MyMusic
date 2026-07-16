@@ -64,4 +64,28 @@ except Exception as e:
       throw Exception("Chaquopy execution failed: $output");
     }
   }
+
+  /// Fetch playlist metadata using yt-dlp via Chaquopy
+  Future<String> fetchPlaylistMetadata(String playlistId) async {
+    final code = '''
+import traceback
+
+try:
+    import ytdlp_wrapper
+    result = ytdlp_wrapper.fetch_playlist_metadata("$playlistId")
+    print(f"SUCCESS:{result}")
+except Exception as e:
+    print(f"ERROR:{traceback.format_exc()}")
+''';
+
+    final result = await Chaquopy.executeCode(code);
+    final output = result['textOutputOrError']?.toString() ?? '';
+    
+    if (output.contains('SUCCESS:')) {
+      final jsonStr = output.split('SUCCESS:').last.trim();
+      return jsonStr;
+    } else {
+      throw Exception("Chaquopy execution failed: $output");
+    }
+  }
 }

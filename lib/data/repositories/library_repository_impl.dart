@@ -59,7 +59,7 @@ class LibraryRepositoryImpl implements ILibraryRepository {
   Future<List<Playlist>> getAllPlaylists() => _playlistDao.getAllPlaylists();
 
   @override
-  Future<void> createPlaylist(String name) => _playlistDao.createPlaylist(name);
+  Future<String> createPlaylist(String name) => _playlistDao.createPlaylist(name);
 
   @override
   Future<void> addSongToPlaylist(String playlistId, String videoId) =>

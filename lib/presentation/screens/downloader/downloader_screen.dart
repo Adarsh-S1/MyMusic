@@ -32,111 +32,383 @@ class _DownloaderScreenState extends ConsumerState<DownloaderScreen> {
   @override
   Widget build(BuildContext context) {
     final formState = ref.watch(downloadFormProvider);
-    final downloadQueue = ref.watch(downloadQueueProvider);
     final theme = Theme.of(context);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Download')),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          // URL Input
-          TextField(
-            controller: _urlController,
-            decoration: InputDecoration(
-              hintText: 'Paste YouTube URL here...',
-              prefixIcon: const Icon(Icons.link),
-              suffixIcon: Row(mainAxisSize: MainAxisSize.min, children: [
-                IconButton(icon: const Icon(Icons.content_paste), onPressed: _pasteFromClipboard, tooltip: 'Paste'),
-                if (_urlController.text.isNotEmpty)
-                  IconButton(icon: const Icon(Icons.clear), onPressed: () { _urlController.clear(); ref.read(downloadFormProvider.notifier).clearForm(); }),
-              ]),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
-              filled: true,
-            ),
-            onChanged: (url) => ref.read(downloadFormProvider.notifier).onUrlChanged(url),
-          ),
-          const SizedBox(height: 12),
-
-          // Error message
-          if (formState.error != null)
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(color: theme.colorScheme.errorContainer, borderRadius: BorderRadius.circular(12)),
-              child: Row(children: [
-                Icon(Icons.error_outline, color: theme.colorScheme.error),
-                const SizedBox(width: 8),
-                Expanded(child: Text(formState.error!, style: TextStyle(color: theme.colorScheme.error))),
-              ]),
-            ),
-
-          // Loading indicator
-          if (formState.isLoading)
-            const Padding(padding: EdgeInsets.all(24), child: Center(child: CircularProgressIndicator())),
-
-          // Metadata Preview Card
-          if (formState.metadata != null) ...[
-            const SizedBox(height: 16),
-            Card(
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  // Thumbnail placeholder + title
-                  Row(children: [
-                    Container(
-                      width: 80, height: 60,
-                      decoration: BoxDecoration(color: theme.colorScheme.primaryContainer, borderRadius: BorderRadius.circular(8)),
-                      child: Icon(Icons.play_circle_outline, color: theme.colorScheme.primary, size: 32),
+      body: CustomScrollView(
+        slivers: [
+          // ── Form section ──────────────────────────────────────
+          SliverPadding(
+            padding: const EdgeInsets.all(16),
+            sliver: SliverToBoxAdapter(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // URL Input
+                  TextField(
+                    controller: _urlController,
+                    decoration: InputDecoration(
+                      hintText: 'Paste YouTube URL here...',
+                      prefixIcon: const Icon(Icons.link),
+                      suffixIcon: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.content_paste),
+                            onPressed: _pasteFromClipboard,
+                            tooltip: 'Paste',
+                          ),
+                          if (_urlController.text.isNotEmpty)
+                            IconButton(
+                              icon: const Icon(Icons.clear),
+                              onPressed: () {
+                                _urlController.clear();
+                                ref
+                                    .read(downloadFormProvider.notifier)
+                                    .clearForm();
+                              },
+                            ),
+                        ],
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      filled: true,
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Text(formState.metadata!.title, maxLines: 2, overflow: TextOverflow.ellipsis, style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
-                      const SizedBox(height: 4),
-                      Text(formState.metadata!.author, style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
-                      Text(formState.metadata!.duration.toHumanString(), style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
-                    ])),
-                  ]),
-                  const SizedBox(height: 16),
-                  // Download button
-                  SizedBox(
-                    width: double.infinity,
-                    child: FilledButton.icon(
-                      onPressed: () {
-                        if (formState.audioStreams != null && formState.audioStreams!.isNotEmpty) {
-                          ref.read(downloadQueueProvider.notifier).enqueue(
-                            videoId: formState.videoId!,
-                            metadata: formState.metadata!,
-                            stream: formState.audioStreams!.first,
-                          );
-                          _urlController.clear();
-                          ref.read(downloadFormProvider.notifier).clearForm();
-                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Download started!')));
-                        }
-                      },
-                      icon: const Icon(Icons.download),
-                      label: const Text('Download MP3'),
-                      style: FilledButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    onChanged: (url) => ref
+                        .read(downloadFormProvider.notifier)
+                        .onUrlChanged(url),
+                  ),
+                  const SizedBox(height: 12),
+
+                  // Error message
+                  if (formState.error != null)
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.errorContainer,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.error_outline,
+                              color: theme.colorScheme.error),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              formState.error!,
+                              style:
+                                  TextStyle(color: theme.colorScheme.error),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                  ),
-                ]),
+
+                  // Loading indicator
+                  if (formState.isLoading)
+                    const Padding(
+                      padding: EdgeInsets.all(24),
+                      child: Center(child: CircularProgressIndicator()),
+                    ),
+
+                  // Metadata Preview Card
+                  if (formState.metadata != null) ...[
+                    const SizedBox(height: 16),
+                    Card(
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Container(
+                                  width: 80,
+                                  height: 60,
+                                  decoration: BoxDecoration(
+                                    color:
+                                        theme.colorScheme.primaryContainer,
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Icon(
+                                    Icons.play_circle_outline,
+                                    color: theme.colorScheme.primary,
+                                    size: 32,
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        formState.metadata!.title,
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: theme
+                                            .textTheme.titleSmall
+                                            ?.copyWith(
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        formState.metadata!.author,
+                                        style: theme
+                                            .textTheme.bodySmall
+                                            ?.copyWith(
+                                          color: theme.colorScheme
+                                              .onSurfaceVariant,
+                                        ),
+                                      ),
+                                      Text(
+                                        formState.metadata!.duration
+                                            .toHumanString(),
+                                        style: theme
+                                            .textTheme.bodySmall
+                                            ?.copyWith(
+                                          color: theme.colorScheme
+                                              .onSurfaceVariant,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 16),
+                            SizedBox(
+                              width: double.infinity,
+                              child: FilledButton.icon(
+                                onPressed: () {
+                                  if (formState.audioStreams != null &&
+                                      formState
+                                          .audioStreams!.isNotEmpty) {
+                                    ref
+                                        .read(downloadQueueProvider
+                                            .notifier)
+                                        .enqueue(
+                                          videoId: formState.videoId!,
+                                          metadata:
+                                              formState.metadata!,
+                                          stream: formState
+                                              .audioStreams!.first,
+                                        );
+                                    _urlController.clear();
+                                    ref
+                                        .read(downloadFormProvider
+                                            .notifier)
+                                        .clearForm();
+                                    ScaffoldMessenger.of(context)
+                                        .showSnackBar(
+                                      const SnackBar(
+                                        content: Text(
+                                            'Download started!'),
+                                      ),
+                                    );
+                                  }
+                                },
+                                icon: const Icon(Icons.download),
+                                label: const Text('Download MP3'),
+                                style: FilledButton.styleFrom(
+                                  padding:
+                                      const EdgeInsets.symmetric(
+                                          vertical: 14),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius:
+                                        BorderRadius.circular(12),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+
+                  // Playlist Metadata Preview Card
+                  if (formState.playlistMetadata != null) ...[
+                    const SizedBox(height: 16),
+                    Card(
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Container(
+                                  width: 80,
+                                  height: 60,
+                                  decoration: BoxDecoration(
+                                    color: theme
+                                        .colorScheme.tertiaryContainer,
+                                    borderRadius:
+                                        BorderRadius.circular(8),
+                                  ),
+                                  child: Icon(
+                                    Icons.playlist_play,
+                                    color:
+                                        theme.colorScheme.tertiary,
+                                    size: 32,
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        formState
+                                            .playlistMetadata!.title,
+                                        maxLines: 2,
+                                        overflow:
+                                            TextOverflow.ellipsis,
+                                        style: theme
+                                            .textTheme.titleSmall
+                                            ?.copyWith(
+                                          fontWeight:
+                                              FontWeight.bold,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        formState
+                                            .playlistMetadata!.author,
+                                        style: theme
+                                            .textTheme.bodySmall
+                                            ?.copyWith(
+                                          color: theme.colorScheme
+                                              .onSurfaceVariant,
+                                        ),
+                                      ),
+                                      Text(
+                                        '${formState.playlistMetadata!.videos.length} videos',
+                                        style: theme
+                                            .textTheme.bodySmall
+                                            ?.copyWith(
+                                          color: theme.colorScheme
+                                              .onSurfaceVariant,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 16),
+                            SizedBox(
+                              width: double.infinity,
+                              child: FilledButton.icon(
+                                onPressed: () {
+                                  ref
+                                      .read(downloadQueueProvider
+                                          .notifier)
+                                      .enqueuePlaylist(
+                                        formState.playlistMetadata!,
+                                      );
+                                  _urlController.clear();
+                                  ref
+                                      .read(downloadFormProvider
+                                          .notifier)
+                                      .clearForm();
+                                  ScaffoldMessenger.of(context)
+                                      .showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                          'Playlist download started!'),
+                                    ),
+                                  );
+                                },
+                                icon: const Icon(Icons.download),
+                                label: const Text('Download All'),
+                                style: FilledButton.styleFrom(
+                                  padding:
+                                      const EdgeInsets.symmetric(
+                                          vertical: 14),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius:
+                                        BorderRadius.circular(12),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ),
-          ],
+          ),
 
-          // Active Downloads List
-          if (downloadQueue.isNotEmpty) ...[
-            const SizedBox(height: 24),
-            Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-              Text('Downloads', style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
-              TextButton(onPressed: () => ref.read(downloadQueueProvider.notifier).clearFinished(), child: const Text('Clear finished')),
-            ]),
-            const SizedBox(height: 8),
-            ...downloadQueue.map((task) => _DownloadTaskTile(task: task)),
-          ],
+          // ── Downloads header ──────────────────────────────────
+          Builder(
+            builder: (context) {
+              final downloadQueue = ref.watch(downloadQueueProvider);
+              if (downloadQueue.isEmpty) {
+                return const SliverToBoxAdapter();
+              }
+              return SliverPadding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                sliver: SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Downloads',
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        TextButton(
+                          onPressed: () => ref
+                              .read(downloadQueueProvider.notifier)
+                              .clearFinished(),
+                          child: const Text('Clear finished'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+
+          // ── Download list (Builder isolates rebuilds) ─────────
+          Builder(
+            builder: (context) {
+              final downloadQueue = ref.watch(downloadQueueProvider);
+              if (downloadQueue.isEmpty) {
+                return const SliverToBoxAdapter();
+              }
+              return SliverPadding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                sliver: SliverList.builder(
+                  itemCount: downloadQueue.length,
+                  itemBuilder: (context, index) =>
+                      _DownloadTaskTile(task: downloadQueue[index]),
+                ),
+              );
+            },
+          ),
+
+          // Bottom padding
+          const SliverToBoxAdapter(child: SizedBox(height: 16)),
         ],
       ),
     );
@@ -147,10 +419,42 @@ class _DownloadTaskTile extends ConsumerWidget {
   final DownloadTask task;
   const _DownloadTaskTile({required this.task});
 
+  /// Extract a short, user-friendly error description from a raw exception string.
+  static String _shortErrorMessage(String raw) {
+    final lower = raw.toLowerCase();
+
+    if (lower.contains('403') || lower.contains('forbidden')) {
+      return 'Failed — access denied by YouTube (try again later)';
+    }
+    if (lower.contains('429') || lower.contains('too many requests')) {
+      return 'Failed — rate limited by YouTube (try again later)';
+    }
+    if (lower.contains('video unavailable')) {
+      return 'Failed — video is unavailable or private';
+    }
+    if (lower.contains('network') ||
+        lower.contains('socket') ||
+        lower.contains('connection')) {
+      return 'Failed — network error, check your connection';
+    }
+    if (lower.contains('cancelled')) {
+      return 'Cancelled';
+    }
+    if (lower.contains('storage') || lower.contains('permission')) {
+      return 'Failed — storage permission denied';
+    }
+
+    // Fallback: take first 80 chars of the exception message.
+    final trimmed = raw.length > 80 ? '${raw.substring(0, 80)}…' : raw;
+    return 'Failed — $trimmed';
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
-    final isActive = task.status == DownloadStatus.downloading || task.status == DownloadStatus.processing;
+    final isActive =
+        task.status == DownloadStatus.downloading ||
+        task.status == DownloadStatus.processing;
 
     IconData statusIcon;
     Color statusColor;
@@ -187,33 +491,69 @@ class _DownloadTaskTile extends ConsumerWidget {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Padding(
         padding: const EdgeInsets.all(12),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Row(children: [
-            Icon(statusIcon, color: statusColor),
-            const SizedBox(width: 12),
-            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(task.title ?? task.youtubeUrl, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w600)),
-              const SizedBox(height: 2),
-              Text(statusLabel, style: theme.textTheme.bodySmall?.copyWith(color: statusColor)),
-              if (task.errorMessage != null)
-                Text(task.errorMessage!, style: TextStyle(color: theme.colorScheme.error, fontSize: 12)),
-            ])),
-            if (isActive)
-              IconButton(icon: const Icon(Icons.close), onPressed: () => ref.read(downloadQueueProvider.notifier).cancelDownload(task.id)),
-          ]),
-          if (isActive) ...[
-            const SizedBox(height: 8),
-            // Use indeterminate bar since Chaquopy can't report real-time progress
-            ClipRRect(
-              borderRadius: BorderRadius.circular(4),
-              child: LinearProgressIndicator(
-                value: task.progress > 0 && task.progress < 1.0 ? task.progress : null,
-                minHeight: 6,
-                backgroundColor: theme.colorScheme.surfaceContainerHighest,
-              ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(statusIcon, color: statusColor),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        task.title ?? task.youtubeUrl,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        statusLabel,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: statusColor,
+                        ),
+                      ),
+                      if (task.errorMessage != null)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: Text(
+                            _shortErrorMessage(task.errorMessage!),
+                            style: TextStyle(
+                              color: theme.colorScheme.error,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                if (isActive)
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () => ref
+                        .read(downloadQueueProvider.notifier)
+                        .cancelDownload(task.id),
+                  ),
+              ],
             ),
+            if (isActive) ...[
+              const SizedBox(height: 8),
+              // Use indeterminate bar since Chaquopy can't report real-time progress
+              ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: LinearProgressIndicator(
+                  value: task.progress > 0 && task.progress < 1.0
+                      ? task.progress
+                      : null,
+                  minHeight: 6,
+                  backgroundColor: theme.colorScheme.surfaceContainerHighest,
+                ),
+              ),
+            ],
           ],
-        ]),
+        ),
       ),
     );
   }

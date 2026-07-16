@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:dio/dio.dart';
@@ -29,10 +30,10 @@ class DownloaderRepositoryImpl implements IDownloaderRepository {
     required ChaquopyDatasource chaquopyDatasource,
     required SongDao songDao,
     Dio? dio,
-  })  : _youtubeDatasource = youtubeDatasource,
-        _chaquopyDatasource = chaquopyDatasource,
-        _songDao = songDao,
-        _dio = dio ?? Dio();
+  }) : _youtubeDatasource = youtubeDatasource,
+       _chaquopyDatasource = chaquopyDatasource,
+       _songDao = songDao,
+       _dio = dio ?? Dio();
 
   @override
   String? validateYoutubeUrl(String url) {
@@ -40,8 +41,43 @@ class DownloaderRepositoryImpl implements IDownloaderRepository {
   }
 
   @override
+  String? validateYoutubePlaylistUrl(String url) {
+    return YoutubePatterns.extractPlaylistId(url.trim());
+  }
+
+  @override
   Future<VideoMetadata> fetchVideoMetadata(String videoId) {
     return _youtubeDatasource.fetchMetadata(videoId);
+  }
+
+  @override
+  Future<PlaylistMetadata> fetchPlaylistMetadata(String playlistId) async {
+    final jsonStr = await _chaquopyDatasource.fetchPlaylistMetadata(playlistId);
+    final data = jsonDecode(jsonStr);
+    
+    final videos = <VideoMetadata>[];
+    final entries = data['entries'] as List<dynamic>? ?? [];
+    
+    for (final entry in entries) {
+      if (entry['id'] == null) continue;
+      
+      final durationSecs = entry['duration'] as num? ?? 0;
+      
+      videos.add(VideoMetadata(
+        videoId: entry['id'],
+        title: entry['title'] ?? 'Unknown Title',
+        author: entry['uploader'] ?? data['uploader'] ?? 'Unknown Artist',
+        duration: Duration(seconds: durationSecs.toInt()),
+        thumbnailUrl: 'https://i.ytimg.com/vi/${entry['id']}/hqdefault.jpg',
+      ));
+    }
+    
+    return PlaylistMetadata(
+      playlistId: playlistId,
+      title: data['title'] ?? 'YouTube Playlist',
+      author: data['uploader'] ?? 'Unknown',
+      videos: videos,
+    );
   }
 
   @override
@@ -74,7 +110,9 @@ class DownloaderRepositoryImpl implements IDownloaderRepository {
       if (extDir == null) throw Exception('Cannot access external storage');
 
       final musicDir = Directory('${extDir.path}/${AppConstants.musicSubDir}');
-      final thumbDir = Directory('${extDir.path}/${AppConstants.thumbnailSubDir}');
+      final thumbDir = Directory(
+        '${extDir.path}/${AppConstants.thumbnailSubDir}',
+      );
       await musicDir.create(recursive: true);
       await thumbDir.create(recursive: true);
 
@@ -89,10 +127,7 @@ class DownloaderRepositoryImpl implements IDownloaderRepository {
       }
 
       // ─── Step 2: Download audio via Chaquopy yt-dlp ──────────
-      task = task.copyWith(
-        status: DownloadStatus.downloading,
-        progress: 0.0,
-      );
+      task = task.copyWith(status: DownloadStatus.downloading, progress: 0.0);
       yield task;
 
       if (_cancelledTasks.contains(taskId)) throw Exception("Cancelled");
@@ -147,6 +182,7 @@ class DownloaderRepositoryImpl implements IDownloaderRepository {
   }
 
   /// Parse yt-dlp speed string like "10.73MiB/s" to bytes/sec.
+  // ignore: unused_element
   double _parseSpeed(String speed) {
     if (speed.isEmpty) return 0;
     try {
@@ -155,10 +191,14 @@ class DownloaderRepositoryImpl implements IDownloaderRepository {
       final value = double.parse(match.group(1)!);
       final unit = match.group(2)!;
       switch (unit) {
-        case 'GiB': return value * 1024 * 1024 * 1024;
-        case 'MiB': return value * 1024 * 1024;
-        case 'KiB': return value * 1024;
-        default: return value;
+        case 'GiB':
+          return value * 1024 * 1024 * 1024;
+        case 'MiB':
+          return value * 1024 * 1024;
+        case 'KiB':
+          return value * 1024;
+        default:
+          return value;
       }
     } catch (_) {
       return 0;

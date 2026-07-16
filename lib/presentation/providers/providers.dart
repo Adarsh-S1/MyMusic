@@ -88,7 +88,9 @@ final libraryRepositoryProvider = Provider<ILibraryRepository>((ref) {
 class DownloadFormState {
   final String url;
   final String? videoId;
+  final String? playlistId;
   final VideoMetadata? metadata;
+  final PlaylistMetadata? playlistMetadata;
   final List<AudioStreamInfo>? audioStreams;
   final bool isLoading;
   final String? error;
@@ -96,7 +98,9 @@ class DownloadFormState {
   const DownloadFormState({
     this.url = '',
     this.videoId,
+    this.playlistId,
     this.metadata,
+    this.playlistMetadata,
     this.audioStreams,
     this.isLoading = false,
     this.error,
@@ -105,7 +109,9 @@ class DownloadFormState {
   DownloadFormState copyWith({
     String? url,
     String? videoId,
+    String? playlistId,
     VideoMetadata? metadata,
+    PlaylistMetadata? playlistMetadata,
     List<AudioStreamInfo>? audioStreams,
     bool? isLoading,
     String? error,
@@ -113,7 +119,9 @@ class DownloadFormState {
     return DownloadFormState(
       url: url ?? this.url,
       videoId: videoId ?? this.videoId,
+      playlistId: playlistId ?? this.playlistId,
       metadata: metadata ?? this.metadata,
+      playlistMetadata: playlistMetadata ?? this.playlistMetadata,
       audioStreams: audioStreams ?? this.audioStreams,
       isLoading: isLoading ?? this.isLoading,
       error: error,
@@ -131,6 +139,24 @@ class DownloadFormNotifier extends StateNotifier<DownloadFormState> {
   Future<void> onUrlChanged(String url) async {
     if (url.isEmpty) {
       state = const DownloadFormState();
+      return;
+    }
+
+    final playlistId = _repo.validateYoutubePlaylistUrl(url);
+    if (playlistId != null) {
+      state = DownloadFormState(url: url, playlistId: playlistId, isLoading: true);
+      try {
+        final metadata = await _repo.fetchPlaylistMetadata(playlistId);
+        state = state.copyWith(
+          playlistMetadata: metadata,
+          isLoading: false,
+        );
+      } catch (e) {
+        state = state.copyWith(
+          isLoading: false,
+          error: 'Failed to fetch playlist info: $e',
+        );
+      }
       return;
     }
 
@@ -174,16 +200,18 @@ final downloadFormProvider =
 /// Download queue notifier — manages active and queued downloads.
 class DownloadQueueNotifier extends StateNotifier<List<DownloadTask>> {
   final IDownloaderRepository _repo;
+  final ILibraryRepository _libraryRepo;
   final Ref _ref;
   final Map<String, StreamSubscription<DownloadTask>> _subscriptions = {};
 
-  DownloadQueueNotifier(this._repo, this._ref) : super([]);
+  DownloadQueueNotifier(this._repo, this._libraryRepo, this._ref) : super([]);
 
   /// Enqueue a download.
   Future<void> enqueue({
     required String videoId,
     required VideoMetadata metadata,
     required AudioStreamInfo stream,
+    String? targetPlaylistId,
   }) async {
     final downloadStream = _repo.downloadAudio(
       videoId: videoId,
@@ -205,6 +233,12 @@ class DownloadQueueNotifier extends StateNotifier<List<DownloadTask>> {
         }
 
         if (task.status == DownloadStatus.completed) {
+          // If a playlist was specified, add the song to it
+          if (targetPlaylistId != null) {
+            _libraryRepo.addSongToPlaylist(targetPlaylistId, videoId);
+            _ref.invalidate(playlistsProvider);
+            _ref.invalidate(playlistSongsProvider(targetPlaylistId));
+          }
           // Cross-screen sync: invalidate library
           _ref.invalidate(libraryProvider);
           sub.cancel();
@@ -219,6 +253,30 @@ class DownloadQueueNotifier extends StateNotifier<List<DownloadTask>> {
         // Handle stream error
       },
     );
+  }
+
+  /// Enqueue a whole playlist.
+  Future<void> enqueuePlaylist(PlaylistMetadata playlistMeta) async {
+    // 1. Create the playlist in the DB
+    final playlistId = await _libraryRepo.createPlaylist(playlistMeta.title);
+    
+    // 2. Enqueue each video in the playlist
+    for (final video in playlistMeta.videos) {
+      try {
+        final streams = await _repo.getAudioStreams(video.videoId);
+        if (streams.isNotEmpty) {
+          await enqueue(
+            videoId: video.videoId,
+            metadata: video,
+            stream: streams.first,
+            targetPlaylistId: playlistId,
+          );
+        }
+      } catch (e) {
+        // Skip failed videos
+        print('Failed to enqueue video from playlist: $e');
+      }
+    }
   }
 
   /// Cancel a download.
@@ -260,6 +318,7 @@ final downloadQueueProvider =
     StateNotifierProvider<DownloadQueueNotifier, List<DownloadTask>>((ref) {
   return DownloadQueueNotifier(
     ref.watch(downloaderRepositoryProvider),
+    ref.watch(libraryRepositoryProvider),
     ref,
   );
 });

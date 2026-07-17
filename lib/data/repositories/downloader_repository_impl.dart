@@ -10,6 +10,7 @@ import 'package:mymusic/data/datasources/local/song_dao.dart';
 import 'package:mymusic/data/datasources/remote/youtube_datasource.dart';
 import 'package:mymusic/data/datasources/remote/chaquopy_datasource.dart';
 import 'package:mymusic/domain/entities/download_task.dart';
+import 'package:mymusic/domain/entities/playlist_entry.dart';
 import 'package:mymusic/domain/entities/song.dart';
 import 'package:mymusic/domain/repositories/i_downloader_repository.dart';
 
@@ -54,6 +55,7 @@ class DownloaderRepositoryImpl implements IDownloaderRepository {
     required String videoId,
     required VideoMetadata metadata,
     required AudioStreamInfo stream,
+    String? playlistName,
   }) async* {
     final taskId = DateTime.now().microsecondsSinceEpoch.toString();
 
@@ -70,11 +72,17 @@ class DownloaderRepositoryImpl implements IDownloaderRepository {
 
     try {
       // Get storage directories
-      final extDir = await getExternalStorageDirectory();
-      if (extDir == null) throw Exception('Cannot access external storage');
+      String musicPath = AppConstants.baseMusicDir;
+      String thumbPath = AppConstants.baseThumbnailDir;
 
-      final musicDir = Directory('${extDir.path}/${AppConstants.musicSubDir}');
-      final thumbDir = Directory('${extDir.path}/${AppConstants.thumbnailSubDir}');
+      if (playlistName != null && playlistName.isNotEmpty) {
+        final safePlaylistName = playlistName.toSafeFilename();
+        musicPath = '$musicPath/$safePlaylistName';
+        thumbPath = '$thumbPath/$safePlaylistName';
+      }
+
+      final musicDir = Directory(musicPath);
+      final thumbDir = Directory(thumbPath);
       await musicDir.create(recursive: true);
       await thumbDir.create(recursive: true);
 
@@ -142,6 +150,33 @@ class DownloaderRepositoryImpl implements IDownloaderRepository {
   }
 
   @override
+  Stream<DownloadTask> downloadAudioByVideoId(String videoId, {String? playlistName}) async* {
+    try {
+      final metadata = await fetchVideoMetadata(videoId);
+      final streams = await getAudioStreams(videoId);
+      
+      if (streams.isEmpty) {
+        throw Exception('No audio streams found for video $videoId');
+      }
+      
+      yield* downloadAudio(
+        videoId: videoId,
+        metadata: metadata,
+        stream: streams.first,
+        playlistName: playlistName,
+      );
+    } catch (e) {
+      yield DownloadTask(
+        id: DateTime.now().microsecondsSinceEpoch.toString(),
+        youtubeUrl: 'https://youtube.com/watch?v=$videoId',
+        videoId: videoId,
+        status: DownloadStatus.failed,
+        errorMessage: e.toString(),
+      );
+    }
+  }
+
+  @override
   Future<void> cancelDownload(String taskId) async {
     _cancelledTasks.add(taskId);
   }
@@ -163,5 +198,20 @@ class DownloaderRepositoryImpl implements IDownloaderRepository {
     } catch (_) {
       return 0;
     }
+  }
+
+  @override
+  Future<(String, List<PlaylistEntry>)> fetchPlaylistVideos(String playlistUrl) async {
+    final result = await _chaquopyDatasource.fetchPlaylistVideos(playlistUrl);
+    final title = result['title'] as String? ?? 'Unknown Playlist';
+    final rawEntries = result['entries'] as List? ?? [];
+    final entries = rawEntries.map((e) {
+      return PlaylistEntry(
+        videoId: e['video_id'] as String,
+        title: e['title'] as String? ?? 'Unknown',
+        durationSeconds: e['duration'] as int?,
+      );
+    }).toList();
+    return (title, entries);
   }
 }

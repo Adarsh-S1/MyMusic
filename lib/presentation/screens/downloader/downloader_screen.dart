@@ -37,105 +37,226 @@ class _DownloaderScreenState extends ConsumerState<DownloaderScreen> {
 
     return Scaffold(
       appBar: AppBar(title: const Text('Download')),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          // URL Input
-          TextField(
-            controller: _urlController,
-            decoration: InputDecoration(
-              hintText: 'Paste YouTube URL here...',
-              prefixIcon: const Icon(Icons.link),
-              suffixIcon: Row(mainAxisSize: MainAxisSize.min, children: [
-                IconButton(icon: const Icon(Icons.content_paste), onPressed: _pasteFromClipboard, tooltip: 'Paste'),
-                if (_urlController.text.isNotEmpty)
-                  IconButton(icon: const Icon(Icons.clear), onPressed: () { _urlController.clear(); ref.read(downloadFormProvider.notifier).clearForm(); }),
-              ]),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
-              filled: true,
-            ),
-            onChanged: (url) => ref.read(downloadFormProvider.notifier).onUrlChanged(url),
-          ),
-          const SizedBox(height: 12),
-
-          // Error message
-          if (formState.error != null)
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(color: theme.colorScheme.errorContainer, borderRadius: BorderRadius.circular(12)),
-              child: Row(children: [
-                Icon(Icons.error_outline, color: theme.colorScheme.error),
-                const SizedBox(width: 8),
-                Expanded(child: Text(formState.error!, style: TextStyle(color: theme.colorScheme.error))),
-              ]),
-            ),
-
-          // Loading indicator
-          if (formState.isLoading)
-            const Padding(padding: EdgeInsets.all(24), child: Center(child: CircularProgressIndicator())),
-
-          // Metadata Preview Card
-          if (formState.metadata != null) ...[
-            const SizedBox(height: 16),
-            Card(
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  // Thumbnail placeholder + title
-                  Row(children: [
-                    Container(
-                      width: 80, height: 60,
-                      decoration: BoxDecoration(color: theme.colorScheme.primaryContainer, borderRadius: BorderRadius.circular(8)),
-                      child: Icon(Icons.play_circle_outline, color: theme.colorScheme.primary, size: 32),
+      body: CustomScrollView(
+        slivers: [
+          // ── Form section ──────────────────────────────────────
+          SliverPadding(
+            padding: const EdgeInsets.all(16),
+            sliver: SliverToBoxAdapter(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // URL Input
+                  TextField(
+                    controller: _urlController,
+                    decoration: InputDecoration(
+                      hintText: 'Paste YouTube Video or Playlist URL...',
+                      prefixIcon: const Icon(Icons.link),
+                      suffixIcon: Row(mainAxisSize: MainAxisSize.min, children: [
+                        IconButton(
+                          icon: const Icon(Icons.content_paste),
+                          onPressed: _pasteFromClipboard,
+                          tooltip: 'Paste',
+                        ),
+                        if (_urlController.text.isNotEmpty)
+                          IconButton(
+                            icon: const Icon(Icons.clear),
+                            onPressed: () {
+                              _urlController.clear();
+                              ref.read(downloadFormProvider.notifier).clearForm();
+                            },
+                          ),
+                      ]),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      filled: true,
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Text(formState.metadata!.title, maxLines: 2, overflow: TextOverflow.ellipsis, style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
-                      const SizedBox(height: 4),
-                      Text(formState.metadata!.author, style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
-                      Text(formState.metadata!.duration.toHumanString(), style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
-                    ])),
-                  ]),
-                  const SizedBox(height: 16),
-                  // Download button
-                  SizedBox(
-                    width: double.infinity,
-                    child: FilledButton.icon(
-                      onPressed: () {
-                        if (formState.audioStreams != null && formState.audioStreams!.isNotEmpty) {
-                          ref.read(downloadQueueProvider.notifier).enqueue(
-                            videoId: formState.videoId!,
-                            metadata: formState.metadata!,
-                            stream: formState.audioStreams!.first,
-                          );
-                          _urlController.clear();
-                          ref.read(downloadFormProvider.notifier).clearForm();
-                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Download started!')));
-                        }
-                      },
-                      icon: const Icon(Icons.download),
-                      label: const Text('Download MP3'),
-                      style: FilledButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    onChanged: (url) {
+                      ref.read(downloadFormProvider.notifier).onUrlChanged(url);
+                    },
+                  ),
+                  const SizedBox(height: 12),
+
+                  // Loading State
+                  if (formState.isLoading)
+                    const Padding(
+                      padding: EdgeInsets.all(16),
+                      child: Center(child: CircularProgressIndicator()),
+                    ),
+
+                  // Error State
+                  if (formState.error != null)
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.errorContainer,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.error_outline,
+                              color: theme.colorScheme.onErrorContainer),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              formState.error!,
+                              style: TextStyle(
+                                  color: theme.colorScheme.onErrorContainer),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                  ),
-                ]),
+
+                  // Single Video Preview
+                  if (formState.metadata != null && formState.audioStreams != null) ...[
+                    const SizedBox(height: 12),
+                    Card(
+                      clipBehavior: Clip.antiAlias,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          AspectRatio(
+                            aspectRatio: 16 / 9,
+                            child: Image.network(
+                              formState.metadata!.thumbnailUrl,
+                              fit: BoxFit.cover,
+                            ),
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.all(16),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  formState.metadata!.title,
+                                  style: theme.textTheme.titleMedium,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  '${formState.metadata!.author} • ${formState.metadata!.duration.toHumanString()}',
+                                  style: theme.textTheme.bodyMedium?.copyWith(
+                                      color: theme.colorScheme.onSurfaceVariant),
+                                ),
+                                const SizedBox(height: 16),
+                                FilledButton.icon(
+                                  onPressed: () {
+                                    ref.read(downloadQueueProvider.notifier).enqueue(
+                                      videoId: formState.videoId!,
+                                      metadata: formState.metadata!,
+                                      stream: formState.audioStreams!.first,
+                                    );
+                                    _urlController.clear();
+                                    ref.read(downloadFormProvider.notifier).clearForm();
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(content: Text('Added to queue')),
+                                    );
+                                  },
+                                  icon: const Icon(Icons.download),
+                                  label: const Text('Download MP3'),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+
+                  // Playlist Preview
+                  if (formState.playlistTitle != null && formState.playlistEntries != null) ...[
+                    const SizedBox(height: 12),
+                    Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                const Icon(Icons.queue_music, size: 40),
+                                const SizedBox(width: 16),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        formState.playlistTitle!,
+                                        style: theme.textTheme.titleMedium,
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        '${formState.playlistEntries!.length} videos',
+                                        style: theme.textTheme.bodyMedium?.copyWith(
+                                            color: theme.colorScheme.onSurfaceVariant),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 16),
+                            FilledButton.icon(
+                              onPressed: () {
+                                ref.read(downloadQueueProvider.notifier).enqueuePlaylist(
+                                  formState.playlistEntries!,
+                                  formState.playlistTitle!,
+                                );
+                                _urlController.clear();
+                                ref.read(downloadFormProvider.notifier).clearForm();
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(content: Text('Added ${formState.playlistEntries!.length} songs to queue')),
+                                );
+                              },
+                              icon: const Icon(Icons.download),
+                              label: const Text('Download All'),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ),
-          ],
+          ),
 
-          // Active Downloads List
+          // ── Downloads Queue ──────────────────────────────────
           if (downloadQueue.isNotEmpty) ...[
-            const SizedBox(height: 24),
-            Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-              Text('Downloads', style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
-              TextButton(onPressed: () => ref.read(downloadQueueProvider.notifier).clearFinished(), child: const Text('Clear finished')),
-            ]),
-            const SizedBox(height: 8),
-            ...downloadQueue.map((task) => _DownloadTaskTile(task: task)),
+            SliverPadding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              sliver: SliverToBoxAdapter(
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('Downloads', style: theme.textTheme.titleLarge),
+                    TextButton(
+                      onPressed: () => ref
+                          .read(downloadQueueProvider.notifier)
+                          .clearFinished(),
+                      child: const Text('Clear Finished'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            SliverPadding(
+              padding: const EdgeInsets.only(left: 16, right: 16, bottom: 80),
+              sliver: SliverList(
+                delegate: SliverChildBuilderDelegate(
+                  (context, index) {
+                    final task = downloadQueue[index];
+                    return _DownloadTaskTile(task: task);
+                  },
+                  childCount: downloadQueue.length,
+                ),
+              ),
+            ),
           ],
         ],
       ),
@@ -145,75 +266,134 @@ class _DownloaderScreenState extends ConsumerState<DownloaderScreen> {
 
 class _DownloadTaskTile extends ConsumerWidget {
   final DownloadTask task;
+
   const _DownloadTaskTile({required this.task});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
-    final isActive = task.status == DownloadStatus.downloading || task.status == DownloadStatus.processing;
-
-    IconData statusIcon;
-    Color statusColor;
+    
     String statusLabel;
+    Color statusColor;
+    bool isActive = false;
+
     switch (task.status) {
       case DownloadStatus.pending:
-        statusIcon = Icons.hourglass_empty;
+        statusLabel = 'Queued';
         statusColor = theme.colorScheme.onSurfaceVariant;
-        statusLabel = 'Waiting...';
+        isActive = true;
+        break;
       case DownloadStatus.downloading:
-        statusIcon = Icons.download;
+        statusLabel = 'Downloading';
         statusColor = theme.colorScheme.primary;
-        statusLabel = 'Downloading...';
+        isActive = true;
+        break;
       case DownloadStatus.processing:
-        statusIcon = Icons.settings;
-        statusColor = theme.colorScheme.tertiary;
-        statusLabel = 'Saving to library...';
+        statusLabel = 'Processing';
+        statusColor = theme.colorScheme.secondary;
+        isActive = true;
+        break;
       case DownloadStatus.completed:
-        statusIcon = Icons.check_circle;
-        statusColor = Colors.green;
         statusLabel = 'Completed';
+        statusColor = Colors.green;
+        break;
       case DownloadStatus.failed:
-        statusIcon = Icons.error;
-        statusColor = theme.colorScheme.error;
         statusLabel = 'Failed';
+        statusColor = theme.colorScheme.error;
+        break;
       case DownloadStatus.cancelled:
-        statusIcon = Icons.cancel;
-        statusColor = theme.colorScheme.onSurfaceVariant;
         statusLabel = 'Cancelled';
+        statusColor = theme.colorScheme.error;
+        break;
     }
 
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Padding(
         padding: const EdgeInsets.all(12),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Row(children: [
-            Icon(statusIcon, color: statusColor),
-            const SizedBox(width: 12),
-            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(task.title ?? task.youtubeUrl, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w600)),
-              const SizedBox(height: 2),
-              Text(statusLabel, style: theme.textTheme.bodySmall?.copyWith(color: statusColor)),
-              if (task.errorMessage != null)
-                Text(task.errorMessage!, style: TextStyle(color: theme.colorScheme.error, fontSize: 12)),
-            ])),
-            if (isActive)
-              IconButton(icon: const Icon(Icons.close), onPressed: () => ref.read(downloadQueueProvider.notifier).cancelDownload(task.id)),
-          ]),
-          if (isActive) ...[
-            const SizedBox(height: 8),
-            // Use indeterminate bar since Chaquopy can't report real-time progress
-            ClipRRect(
-              borderRadius: BorderRadius.circular(4),
-              child: LinearProgressIndicator(
-                value: task.progress > 0 && task.progress < 1.0 ? task.progress : null,
-                minHeight: 6,
-                backgroundColor: theme.colorScheme.surfaceContainerHighest,
-              ),
+        child: Column(
+          children: [
+            Row(
+              children: [
+                if (task.thumbnailUrl != null)
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: Image.network(
+                      task.thumbnailUrl!,
+                      width: 60,
+                      height: 45,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => Container(
+                        width: 60,
+                        height: 45,
+                        color: theme.colorScheme.surfaceContainerHighest,
+                        child: const Icon(Icons.music_note),
+                      ),
+                    ),
+                  )
+                else
+                  Container(
+                    width: 60,
+                    height: 45,
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(Icons.music_note),
+                  ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        task.title ?? task.youtubeUrl,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        statusLabel,
+                        style: theme.textTheme.bodySmall?.copyWith(color: statusColor),
+                      ),
+                      if (task.errorMessage != null)
+                        Text(
+                          task.errorMessage!,
+                          style: TextStyle(
+                            color: theme.colorScheme.error,
+                            fontSize: 12,
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                    ],
+                  ),
+                ),
+                if (isActive)
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () => ref
+                        .read(downloadQueueProvider.notifier)
+                        .cancelDownload(task.id),
+                  ),
+              ],
             ),
+            if (isActive) ...[
+              const SizedBox(height: 8),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: LinearProgressIndicator(
+                  value: task.progress > 0 && task.progress < 1.0
+                      ? task.progress
+                      : null,
+                  minHeight: 6,
+                  backgroundColor: theme.colorScheme.surfaceContainerHighest,
+                ),
+              ),
+            ],
           ],
-        ]),
+        ),
       ),
     );
   }

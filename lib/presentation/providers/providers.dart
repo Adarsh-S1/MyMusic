@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:isar/isar.dart';
 import 'package:path_provider/path_provider.dart';
 
+import 'package:mymusic/core/constants/app_constants.dart';
 import 'package:mymusic/data/datasources/local/song_dao.dart';
 import 'package:mymusic/data/datasources/local/playlist_dao.dart';
 import 'package:mymusic/data/datasources/remote/youtube_datasource.dart';
@@ -13,6 +14,7 @@ import 'package:mymusic/data/models/playlist_model.dart';
 import 'package:mymusic/data/repositories/downloader_repository_impl.dart';
 import 'package:mymusic/data/repositories/library_repository_impl.dart';
 import 'package:mymusic/domain/entities/download_task.dart';
+import 'package:mymusic/domain/entities/playlist_entry.dart';
 import 'package:mymusic/domain/entities/song.dart';
 import 'package:mymusic/domain/entities/playlist.dart';
 import 'package:mymusic/domain/repositories/i_downloader_repository.dart';
@@ -90,6 +92,8 @@ class DownloadFormState {
   final String? videoId;
   final VideoMetadata? metadata;
   final List<AudioStreamInfo>? audioStreams;
+  final String? playlistTitle;
+  final List<PlaylistEntry>? playlistEntries;
   final bool isLoading;
   final String? error;
 
@@ -98,6 +102,8 @@ class DownloadFormState {
     this.videoId,
     this.metadata,
     this.audioStreams,
+    this.playlistTitle,
+    this.playlistEntries,
     this.isLoading = false,
     this.error,
   });
@@ -107,6 +113,8 @@ class DownloadFormState {
     String? videoId,
     VideoMetadata? metadata,
     List<AudioStreamInfo>? audioStreams,
+    String? playlistTitle,
+    List<PlaylistEntry>? playlistEntries,
     bool? isLoading,
     String? error,
   }) {
@@ -115,6 +123,8 @@ class DownloadFormState {
       videoId: videoId ?? this.videoId,
       metadata: metadata ?? this.metadata,
       audioStreams: audioStreams ?? this.audioStreams,
+      playlistTitle: playlistTitle ?? this.playlistTitle,
+      playlistEntries: playlistEntries ?? this.playlistEntries,
       isLoading: isLoading ?? this.isLoading,
       error: error,
     );
@@ -134,6 +144,27 @@ class DownloadFormNotifier extends StateNotifier<DownloadFormState> {
       return;
     }
 
+    // Try playlist auto-detection first
+    final playlistId = YoutubePatterns.extractPlaylistId(url);
+    if (playlistId != null) {
+      state = DownloadFormState(url: url, isLoading: true);
+      try {
+        final (title, entries) = await _repo.fetchPlaylistVideos(url);
+        state = state.copyWith(
+          isLoading: false,
+          playlistTitle: title,
+          playlistEntries: entries,
+        );
+      } catch (e) {
+        state = state.copyWith(
+          isLoading: false,
+          error: 'Failed to fetch playlist info: $e',
+        );
+      }
+      return;
+    }
+
+    // Fallback to single video detection
     final videoId = _repo.validateYoutubeUrl(url);
     if (videoId == null) {
       state = DownloadFormState(
@@ -176,6 +207,7 @@ class DownloadQueueNotifier extends StateNotifier<List<DownloadTask>> {
   final IDownloaderRepository _repo;
   final Ref _ref;
   final Map<String, StreamSubscription<DownloadTask>> _subscriptions = {};
+  bool _isProcessingPlaylist = false;
 
   DownloadQueueNotifier(this._repo, this._ref) : super([]);
 
@@ -219,6 +251,91 @@ class DownloadQueueNotifier extends StateNotifier<List<DownloadTask>> {
         // Handle stream error
       },
     );
+    _subscriptions[videoId] = sub;
+  }
+
+  /// Enqueue a playlist and start sequential processing
+  void enqueuePlaylist(List<PlaylistEntry> entries, String playlistTitle) {
+    final newTasks = entries.map((e) => DownloadTask(
+      id: DateTime.now().microsecondsSinceEpoch.toString() + e.videoId,
+      youtubeUrl: 'https://youtube.com/watch?v=${e.videoId}',
+      videoId: e.videoId,
+      title: e.title,
+      status: DownloadStatus.pending,
+    )).toList();
+    
+    state = [...state, ...newTasks];
+    _processPlaylistQueue(playlistTitle);
+  }
+
+  Future<void> _processPlaylistQueue(String playlistTitle) async {
+    if (_isProcessingPlaylist) return;
+    _isProcessingPlaylist = true;
+
+    try {
+      while (true) {
+        if (!mounted) break;
+        final nextTaskIndex = state.indexWhere((t) => t.status == DownloadStatus.pending);
+        if (nextTaskIndex == -1) break; // Queue finished
+
+        final task = state[nextTaskIndex];
+        if (task.videoId == null) continue;
+
+        await _downloadSingleTask(task.videoId!, task.id, playlistTitle: playlistTitle);
+      }
+    } finally {
+      _isProcessingPlaylist = false;
+    }
+  }
+
+  Future<void> _downloadSingleTask(String videoId, String taskId, {String? playlistTitle}) async {
+    final completer = Completer<void>();
+    final downloadStream = _repo.downloadAudioByVideoId(videoId, playlistName: playlistTitle);
+    late StreamSubscription<DownloadTask> sub;
+
+    sub = downloadStream.listen(
+      (DownloadTask update) {
+        // Preserve original taskId
+        final finalUpdate = update.copyWith(id: taskId);
+        
+        if (mounted) {
+          final idx = state.indexWhere((t) => t.id == taskId);
+          if (idx >= 0) {
+            final newState = List<DownloadTask>.from(state);
+            newState[idx] = finalUpdate;
+            state = newState;
+          }
+        }
+
+        if (finalUpdate.status == DownloadStatus.completed) {
+          _ref.invalidate(libraryProvider);
+          sub.cancel();
+          _subscriptions.remove(taskId);
+          if (!completer.isCompleted) completer.complete();
+        } else if (finalUpdate.status == DownloadStatus.failed ||
+                   finalUpdate.status == DownloadStatus.cancelled) {
+          sub.cancel();
+          _subscriptions.remove(taskId);
+          if (!completer.isCompleted) completer.complete();
+        }
+      },
+      onError: (e) {
+        if (mounted) {
+          final idx = state.indexWhere((t) => t.id == taskId);
+          if (idx >= 0) {
+            state = [...state]..[idx] = state[idx].copyWith(
+              status: DownloadStatus.failed,
+              errorMessage: e.toString()
+            );
+          }
+        }
+        _subscriptions.remove(taskId);
+        if (!completer.isCompleted) completer.complete();
+      },
+    );
+    
+    _subscriptions[taskId] = sub;
+    await completer.future;
   }
 
   /// Cancel a download.

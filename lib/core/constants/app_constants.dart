@@ -6,8 +6,8 @@ class AppConstants {
   static const String appVersion = '1.0.0';
 
   // Storage paths
-  static const String musicSubDir = 'yt-groove/audio';
-  static const String thumbnailSubDir = 'yt-groove/thumbnails';
+  static const String baseMusicDir = '/storage/emulated/0/Music/YT-Groove';
+  static const String baseThumbnailDir = '/storage/emulated/0/Pictures/YT-Groove';
 
   // Default metadata
   static const String defaultAlbum = 'YouTube Downloads';
@@ -20,6 +20,10 @@ class AppConstants {
   // Audio notification
   static const String audioNotificationChannelId = 'com.example.mymusic.channel.audio';
   static const String audioNotificationChannelName = 'YT-Groove Playback';
+
+  // Download notification
+  static const String downloadNotificationChannelId = 'com.example.mymusic.channel.download';
+  static const String downloadNotificationChannelName = 'YT-Groove Downloads';
 }
 
 /// Supported YouTube URL regex patterns.
@@ -46,6 +50,16 @@ class YoutubePatterns {
     r'^https?://m\.youtube\.com/watch\?.*v=([a-zA-Z0-9_-]{11})',
   );
 
+  /// Matches the `list=PLAYLIST_ID` parameter in any YouTube URL.
+  static final RegExp playlistParam = RegExp(
+    r'[?&]list=([a-zA-Z0-9_-]+)',
+  );
+
+  /// Matches a pure playlist URL: youtube.com/playlist?list=PLAYLIST_ID
+  static final RegExp playlistUrl = RegExp(
+    r'^https?://(www\.)?youtube\.com/playlist\?list=([a-zA-Z0-9_-]+)',
+  );
+
   /// Extracts video ID from any supported YouTube URL format.
   static String? extractVideoId(String url) {
     RegExpMatch? match;
@@ -63,5 +77,11 @@ class YoutubePatterns {
     if (match != null) return match.group(1);
 
     return null;
+  }
+
+  /// Extracts playlist ID from any YouTube URL that contains `list=` parameter.
+  static String? extractPlaylistId(String url) {
+    final match = playlistParam.firstMatch(url);
+    return match?.group(1);
   }
 }

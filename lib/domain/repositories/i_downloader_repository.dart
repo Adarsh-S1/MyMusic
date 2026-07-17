@@ -1,4 +1,5 @@
 import 'package:mymusic/domain/entities/download_task.dart';
+import 'package:mymusic/domain/entities/playlist_entry.dart';
 
 /// Video metadata fetched from YouTube before download.
 class VideoMetadata {
@@ -49,8 +50,16 @@ abstract class IDownloaderRepository {
     required String videoId,
     required VideoMetadata metadata,
     required AudioStreamInfo stream,
+    String? playlistName,
   });
 
   /// Cancels an active download.
   Future<void> cancelDownload(String taskId);
+
+  /// Convenience method: fetches metadata, gets streams, and downloads in one call.
+  Stream<DownloadTask> downloadAudioByVideoId(String videoId, {String? playlistName});
+
+  /// Extracts the list of videos from a YouTube playlist URL.
+  /// Returns (playlist title, list of PlaylistEntry).
+  Future<(String, List<PlaylistEntry>)> fetchPlaylistVideos(String playlistUrl);
 }

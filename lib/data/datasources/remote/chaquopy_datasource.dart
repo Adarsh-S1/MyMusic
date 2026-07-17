@@ -1,5 +1,8 @@
+import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 
+import 'package:flutter/services.dart';
 import 'package:chaquopy/chaquopy.dart';
 
 /// Datasource that uses Chaquopy to run yt-dlp via Python locally on Android.
@@ -29,8 +32,14 @@ except Exception as e:
     print('[ChaquopyDS] Starting download for videoId=$videoId');
     print('[ChaquopyDS] Output dir: $outputDir, filename: $safeFilename');
     
-    final result = await Chaquopy.executeCode(code);
-    final output = result['textOutputOrError']?.toString() ?? '';
+    final token = RootIsolateToken.instance!;
+    
+    // Run Chaquopy on a background isolate so it doesn't freeze the UI
+    final output = await Isolate.run(() async {
+      BackgroundIsolateBinaryMessenger.ensureInitialized(token);
+      final result = await Chaquopy.executeCode(code);
+      return result['textOutputOrError']?.toString() ?? '';
+    });
     
     print('[ChaquopyDS] Raw Chaquopy output: $output');
     
@@ -49,19 +58,42 @@ except Exception as e:
         
         return path;
       } else {
-        // Try listing files in the output directory to help debug
-        final dir = Directory(outputDir);
-        if (dir.existsSync()) {
-          final files = dir.listSync();
-          print('[ChaquopyDS] Files in output dir:');
-          for (final f in files) {
-            print('[ChaquopyDS]   ${f.path}');
-          }
-        }
         throw Exception("Python reported success but file not found: $path");
       }
     } else {
       throw Exception("Chaquopy execution failed: $output");
+    }
+  }
+
+  /// Fetch the list of videos in a YouTube playlist without downloading.
+  /// Returns a map with 'title' (playlist name) and 'entries' (list of video maps).
+  Future<Map<String, dynamic>> fetchPlaylistVideos(String playlistUrl) async {
+    final safeUrl = playlistUrl.replaceAll('"', '\\"');
+    final code = '''
+import sys
+import traceback
+
+try:
+    import ytdlp_wrapper
+    result = ytdlp_wrapper.fetch_playlist_videos("$safeUrl")
+    print(f"SUCCESS:{result}")
+except Exception as e:
+    print(f"ERROR:{traceback.format_exc()}")
+''';
+
+    final token = RootIsolateToken.instance!;
+    
+    final output = await Isolate.run(() async {
+      BackgroundIsolateBinaryMessenger.ensureInitialized(token);
+      final result = await Chaquopy.executeCode(code);
+      return result['textOutputOrError']?.toString() ?? '';
+    });
+
+    if (output.contains('SUCCESS:')) {
+      final jsonStr = output.split('SUCCESS:').last.trim();
+      return Map<String, dynamic>.from(json.decode(jsonStr));
+    } else {
+      throw Exception("Chaquopy playlist extraction failed: $output");
     }
   }
 }

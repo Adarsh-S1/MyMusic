@@ -18,6 +18,21 @@ class VideoMetadata {
   });
 }
 
+/// Metadata for a YouTube playlist.
+class PlaylistMetadata {
+  final String playlistId;
+  final String title;
+  final String author;
+  final List<VideoMetadata> videos;
+
+  const PlaylistMetadata({
+    required this.playlistId,
+    required this.title,
+    required this.author,
+    required this.videos,
+  });
+}
+
 /// Audio stream info from YouTube.
 class AudioStreamInfo {
   final String url;
@@ -38,8 +53,14 @@ abstract class IDownloaderRepository {
   /// Validates a YouTube URL and returns the video ID, or null if invalid.
   String? validateYoutubeUrl(String url);
 
+  /// Validates a YouTube URL and returns the playlist ID, or null if invalid.
+  String? validateYoutubePlaylistUrl(String url);
+
   /// Fetches metadata for a YouTube video.
   Future<VideoMetadata> fetchVideoMetadata(String videoId);
+
+  /// Fetches metadata for a YouTube playlist.
+  Future<PlaylistMetadata> fetchPlaylistMetadata(String playlistId);
 
   /// Gets available audio streams for a video.
   Future<List<AudioStreamInfo>> getAudioStreams(String videoId);

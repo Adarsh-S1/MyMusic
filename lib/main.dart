@@ -60,34 +60,35 @@ class YtGrooveAudioHandler extends BaseAudioHandler with SeekHandler {
 
   AudioPlayer get player => _player;
 
-  Future<void> playFromSong(Song song) async {
+  /// Returns the detected duration from the audio file.
+  Future<Duration> playFromSong(Song song) async {
     final audioFile = File(song.localAudioPath);
     final thumbFile = File(song.localThumbnailPath);
-
-    print('[AudioHandler] playFromSong: "${song.title}"');
-    print('[AudioHandler] Audio path: ${song.localAudioPath}');
-    print('[AudioHandler] Audio file exists: ${audioFile.existsSync()}');
-    if (audioFile.existsSync()) {
-      print('[AudioHandler] Audio file size: ${audioFile.lengthSync()} bytes');
-    }
 
     if (!audioFile.existsSync()) {
       throw Exception('Audio file not found: ${song.localAudioPath}');
     }
+
+    // Set the file first so just_audio can detect duration
+    await _player.setFilePath(song.localAudioPath);
+
+    // Use detected duration, fall back to stored duration
+    final detectedDuration = _player.duration ?? song.duration;
 
     mediaItem.add(
       MediaItem(
         id: song.videoId,
         title: song.title,
         artist: song.artist ?? 'Unknown Artist',
-        duration: song.duration,
+        duration: detectedDuration,
         artUri: thumbFile.existsSync()
             ? Uri.file(song.localThumbnailPath)
             : null,
       ),
     );
-    await _player.setFilePath(song.localAudioPath);
+
     await _player.play();
+    return detectedDuration;
   }
 
   @override

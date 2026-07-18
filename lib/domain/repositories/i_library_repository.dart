@@ -26,8 +26,8 @@ abstract class ILibraryRepository {
   /// Retrieves all playlists.
   Future<List<Playlist>> getAllPlaylists();
 
-  /// Creates a new playlist.
-  Future<void> createPlaylist(String name);
+  /// Creates a new playlist. Returns the playlist ID.
+  Future<String> createPlaylist(String name);
 
   /// Adds a song to a playlist.
   Future<void> addSongToPlaylist(String playlistId, String videoId);

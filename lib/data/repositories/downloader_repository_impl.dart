@@ -1,5 +1,5 @@
 import 'dart:async';
-import 'dart:convert';
+import 'dart:io';
 
 import 'package:dio/dio.dart';
 
@@ -52,30 +52,29 @@ class DownloaderRepositoryImpl implements IDownloaderRepository {
 
   @override
   Future<PlaylistMetadata> fetchPlaylistMetadata(String playlistId) async {
-    final jsonStr = await _chaquopyDatasource.fetchPlaylistMetadata(playlistId);
-    final data = jsonDecode(jsonStr);
-    
+    final result = await _chaquopyDatasource.fetchPlaylistVideos(
+      'https://youtube.com/playlist?list=$playlistId',
+    );
+    final title = result['title'] as String? ?? 'YouTube Playlist';
+    final rawEntries = result['entries'] as List? ?? [];
+
     final videos = <VideoMetadata>[];
-    final entries = data['entries'] as List<dynamic>? ?? [];
-    
-    for (final entry in entries) {
-      if (entry['id'] == null) continue;
-      
-      final durationSecs = entry['duration'] as num? ?? 0;
-      
+    for (final entry in rawEntries) {
+      if (entry['video_id'] == null) continue;
+      final durationSecs = entry['duration'] as int? ?? 0;
       videos.add(VideoMetadata(
-        videoId: entry['id'],
+        videoId: entry['video_id'],
         title: entry['title'] ?? 'Unknown Title',
-        author: entry['uploader'] ?? data['uploader'] ?? 'Unknown Artist',
-        duration: Duration(seconds: durationSecs.toInt()),
-        thumbnailUrl: 'https://i.ytimg.com/vi/${entry['id']}/hqdefault.jpg',
+        author: 'Unknown Artist',
+        duration: Duration(seconds: durationSecs),
+        thumbnailUrl: 'https://i.ytimg.com/vi/${entry['video_id']}/hqdefault.jpg',
       ));
     }
-    
+
     return PlaylistMetadata(
       playlistId: playlistId,
-      title: data['title'] ?? 'YouTube Playlist',
-      author: data['uploader'] ?? 'Unknown',
+      title: title,
+      author: 'Unknown',
       videos: videos,
     );
   }

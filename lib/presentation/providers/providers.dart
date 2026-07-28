@@ -6,6 +6,8 @@ import 'package:isar/isar.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'package:mymusic/core/constants/app_constants.dart';
+import 'package:mymusic/core/utils/directory_scanner.dart';
+import 'package:mymusic/core/utils/permission_helper.dart';
 import 'package:mymusic/data/datasources/local/song_dao.dart';
 import 'package:mymusic/data/datasources/local/playlist_dao.dart';
 import 'package:mymusic/data/datasources/remote/youtube_datasource.dart';
@@ -370,30 +372,6 @@ class DownloadQueueNotifier extends StateNotifier<List<DownloadTask>> {
     
     _subscriptions[taskId] = sub;
     await completer.future;
-  }
-
-  /// Enqueue a whole playlist.
-  Future<void> enqueuePlaylist(PlaylistMetadata playlistMeta) async {
-    // 1. Create the playlist in the DB
-    final playlistId = await _libraryRepo.createPlaylist(playlistMeta.title);
-    
-    // 2. Enqueue each video in the playlist
-    for (final video in playlistMeta.videos) {
-      try {
-        final streams = await _repo.getAudioStreams(video.videoId);
-        if (streams.isNotEmpty) {
-          await enqueue(
-            videoId: video.videoId,
-            metadata: video,
-            stream: streams.first,
-            targetPlaylistId: playlistId,
-          );
-        }
-      } catch (e) {
-        // Skip failed videos
-        print('Failed to enqueue video from playlist: $e');
-      }
-    }
   }
 
   /// Cancel a download.

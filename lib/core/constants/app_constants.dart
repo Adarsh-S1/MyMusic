@@ -11,6 +11,14 @@ class AppConstants {
   static const String baseMusicDir = '/storage/emulated/0/Music/YT-Groove';
   static const String baseThumbnailDir = '/storage/emulated/0/Pictures/YT-Groove';
 
+  // Public shared storage directory names (persists after app uninstall)
+  static const String publicMusicDir = 'YT-Groove';
+  static const String publicThumbnailDir = 'YT-Groove';
+
+  // Legacy storage paths (kept for migration from old installs)
+  static const String musicSubDir = 'yt-groove/audio';
+  static const String thumbnailSubDir = 'yt-groove/thumbnails';
+
   /// Get the public Music directory for storing downloaded audio files.
   /// Files here survive app uninstall.
   static Future<Directory> getPublicMusicDir() async {

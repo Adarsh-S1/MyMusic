@@ -32,6 +32,7 @@ class _DownloaderScreenState extends ConsumerState<DownloaderScreen> {
   @override
   Widget build(BuildContext context) {
     final formState = ref.watch(downloadFormProvider);
+    final downloadQueue = ref.watch(downloadQueueProvider);
     final theme = Theme.of(context);
 
     return Scaffold(
@@ -267,36 +268,6 @@ class _DownloadTaskTile extends ConsumerWidget {
   final DownloadTask task;
 
   const _DownloadTaskTile({required this.task});
-
-  /// Extract a short, user-friendly error description from a raw exception string.
-  static String _shortErrorMessage(String raw) {
-    final lower = raw.toLowerCase();
-
-    if (lower.contains('403') || lower.contains('forbidden')) {
-      return 'Failed — access denied by YouTube (try again later)';
-    }
-    if (lower.contains('429') || lower.contains('too many requests')) {
-      return 'Failed — rate limited by YouTube (try again later)';
-    }
-    if (lower.contains('video unavailable')) {
-      return 'Failed — video is unavailable or private';
-    }
-    if (lower.contains('network') ||
-        lower.contains('socket') ||
-        lower.contains('connection')) {
-      return 'Failed — network error, check your connection';
-    }
-    if (lower.contains('cancelled')) {
-      return 'Cancelled';
-    }
-    if (lower.contains('storage') || lower.contains('permission')) {
-      return 'Failed — storage permission denied';
-    }
-
-    // Fallback: take first 80 chars of the exception message.
-    final trimmed = raw.length > 80 ? '${raw.substring(0, 80)}…' : raw;
-    return 'Failed — $trimmed';
-  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {

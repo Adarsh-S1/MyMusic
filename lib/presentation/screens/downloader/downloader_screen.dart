@@ -32,7 +32,8 @@ class _DownloaderScreenState extends ConsumerState<DownloaderScreen> {
   @override
   Widget build(BuildContext context) {
     final formState = ref.watch(downloadFormProvider);
-    final downloadQueue = ref.watch(downloadQueueProvider);
+    final queueLength = ref.watch(downloadQueueProvider.select((q) => q.length));
+    final hasDownloads = queueLength > 0;
     final theme = Theme.of(context);
 
     return Scaffold(
@@ -226,7 +227,7 @@ class _DownloaderScreenState extends ConsumerState<DownloaderScreen> {
           ),
 
           // ── Downloads Queue ──────────────────────────────────
-          if (downloadQueue.isNotEmpty) ...[
+          if (hasDownloads) ...[
             SliverPadding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               sliver: SliverToBoxAdapter(
@@ -249,10 +250,10 @@ class _DownloaderScreenState extends ConsumerState<DownloaderScreen> {
               sliver: SliverList(
                 delegate: SliverChildBuilderDelegate(
                   (context, index) {
-                    final task = downloadQueue[index];
-                    return _DownloadTaskTile(task: task);
+                    final taskId = ref.read(downloadQueueProvider)[index].id;
+                    return _DownloadTaskTile(taskId: taskId);
                   },
-                  childCount: downloadQueue.length,
+                  childCount: queueLength,
                 ),
               ),
             ),
@@ -264,33 +265,39 @@ class _DownloaderScreenState extends ConsumerState<DownloaderScreen> {
 }
 
 class _DownloadTaskTile extends ConsumerWidget {
-  final DownloadTask task;
+  final String taskId;
 
-  const _DownloadTaskTile({required this.task});
+  const _DownloadTaskTile({required this.taskId});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Only watch this specific task, completely preventing parent/list rebuilds on progress ticks
+    final task = ref.watch(downloadQueueProvider.select((queue) {
+      for (final t in queue) {
+        if (t.id == taskId) return t;
+      }
+      return null;
+    }));
+
+    if (task == null) return const SizedBox.shrink();
+
     final theme = Theme.of(context);
     
     String statusLabel;
     Color statusColor;
-    bool isActive = false;
 
     switch (task.status) {
       case DownloadStatus.pending:
         statusLabel = 'Queued';
         statusColor = theme.colorScheme.onSurfaceVariant;
-        isActive = true;
         break;
       case DownloadStatus.downloading:
         statusLabel = 'Downloading';
         statusColor = theme.colorScheme.primary;
-        isActive = true;
         break;
       case DownloadStatus.processing:
         statusLabel = 'Processing';
         statusColor = theme.colorScheme.secondary;
-        isActive = true;
         break;
       case DownloadStatus.completed:
         statusLabel = 'Completed';
@@ -369,28 +376,8 @@ class _DownloadTaskTile extends ConsumerWidget {
                     ],
                   ),
                 ),
-                if (isActive)
-                  IconButton(
-                    icon: const Icon(Icons.close),
-                    onPressed: () => ref
-                        .read(downloadQueueProvider.notifier)
-                        .cancelDownload(task.id),
-                  ),
               ],
             ),
-            if (isActive) ...[
-              const SizedBox(height: 8),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(4),
-                child: LinearProgressIndicator(
-                  value: task.progress > 0 && task.progress < 1.0
-                      ? task.progress
-                      : null,
-                  minHeight: 6,
-                  backgroundColor: theme.colorScheme.surfaceContainerHighest,
-                ),
-              ),
-            ],
           ],
         ),
       ),

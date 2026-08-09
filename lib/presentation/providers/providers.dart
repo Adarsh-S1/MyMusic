@@ -10,7 +10,6 @@ import 'package:mymusic/core/utils/directory_scanner.dart';
 import 'package:mymusic/core/utils/permission_helper.dart';
 import 'package:mymusic/data/datasources/local/song_dao.dart';
 import 'package:mymusic/data/datasources/local/playlist_dao.dart';
-import 'package:mymusic/data/datasources/remote/youtube_datasource.dart';
 import 'package:mymusic/data/datasources/remote/chaquopy_datasource.dart';
 import 'package:mymusic/data/models/song_model.dart';
 import 'package:mymusic/data/models/playlist_model.dart';
@@ -57,16 +56,11 @@ final isarProvider = FutureProvider<Isar>((ref) async {
   return isar;
 });
 
-/// YouTube datasource provider.
-final youtubeDatasourceProvider = Provider<IYoutubeDatasource>((ref) {
-  final ds = YoutubeExplodeDatasource();
+/// Chaquopy datasource provider — persistent isolate for all yt-dlp calls.
+final chaquopyDatasourceProvider = Provider<ChaquopyDatasource>((ref) {
+  final ds = ChaquopyDatasource();
   ref.onDispose(() => ds.dispose());
   return ds;
-});
-
-/// Chaquopy datasource provider.
-final chaquopyDatasourceProvider = Provider<ChaquopyDatasource>((ref) {
-  return ChaquopyDatasource();
 });
 
 /// Song DAO provider.
@@ -85,10 +79,9 @@ final playlistDaoProvider = Provider<PlaylistDao>((ref) {
 // REPOSITORY PROVIDERS
 // ═══════════════════════════════════════════════════════════
 
-/// Downloader repository provider (hybrid: youtube_explode + chaquopy).
+/// Downloader repository provider (powered entirely by yt-dlp via Chaquopy).
 final downloaderRepositoryProvider = Provider<IDownloaderRepository>((ref) {
   return DownloaderRepositoryImpl(
-    youtubeDatasource: ref.watch(youtubeDatasourceProvider),
     chaquopyDatasource: ref.watch(chaquopyDatasourceProvider),
     songDao: ref.watch(songDaoProvider),
   );
@@ -113,7 +106,6 @@ class DownloadFormState {
   final String? playlistId;
   final VideoMetadata? metadata;
   final PlaylistMetadata? playlistMetadata;
-  final List<AudioStreamInfo>? audioStreams;
   final String? playlistTitle;
   final List<PlaylistEntry>? playlistEntries;
   final bool isLoading;
@@ -125,7 +117,6 @@ class DownloadFormState {
     this.playlistId,
     this.metadata,
     this.playlistMetadata,
-    this.audioStreams,
     this.playlistTitle,
     this.playlistEntries,
     this.isLoading = false,
@@ -138,7 +129,6 @@ class DownloadFormState {
     String? playlistId,
     VideoMetadata? metadata,
     PlaylistMetadata? playlistMetadata,
-    List<AudioStreamInfo>? audioStreams,
     String? playlistTitle,
     List<PlaylistEntry>? playlistEntries,
     bool? isLoading,
@@ -150,7 +140,6 @@ class DownloadFormState {
       playlistId: playlistId ?? this.playlistId,
       metadata: metadata ?? this.metadata,
       playlistMetadata: playlistMetadata ?? this.playlistMetadata,
-      audioStreams: audioStreams ?? this.audioStreams,
       playlistTitle: playlistTitle ?? this.playlistTitle,
       playlistEntries: playlistEntries ?? this.playlistEntries,
       isLoading: isLoading ?? this.isLoading,
@@ -206,10 +195,8 @@ class DownloadFormNotifier extends StateNotifier<DownloadFormState> {
 
     try {
       final metadata = await _repo.fetchVideoMetadata(videoId);
-      final streams = await _repo.getAudioStreams(videoId);
       state = state.copyWith(
         metadata: metadata,
-        audioStreams: streams,
         isLoading: false,
       );
     } catch (e) {
@@ -240,40 +227,40 @@ class DownloadQueueNotifier extends StateNotifier<List<DownloadTask>> {
 
   DownloadQueueNotifier(this._repo, this._libraryRepo, this._ref) : super([]);
 
-  /// Enqueue a download.
+  /// Helper to add or update a task in the state list.
+  void _updateTaskState(DownloadTask task) {
+    final idx = state.indexWhere((t) => t.id == task.id);
+    if (idx >= 0) {
+      final newState = List<DownloadTask>.from(state);
+      newState[idx] = task;
+      state = newState;
+    } else {
+      state = [...state, task];
+    }
+  }
+
+  /// Enqueue a single video download.
   Future<void> enqueue({
     required String videoId,
-    required VideoMetadata metadata,
-    required AudioStreamInfo stream,
+    required String title,
     String? targetPlaylistId,
   }) async {
-    final downloadStream = _repo.downloadAudio(
+    final downloadStream = _repo.downloadAudioDirect(
       videoId: videoId,
-      metadata: metadata,
-      stream: stream,
+      title: title,
     );
 
     late StreamSubscription<DownloadTask> sub;
     sub = downloadStream.listen(
       (DownloadTask task) {
-        // Update or add task in state
-        final idx = state.indexWhere((t) => t.id == task.id);
-        if (idx >= 0) {
-          final newState = List<DownloadTask>.from(state);
-          newState[idx] = task;
-          state = newState;
-        } else {
-          state = [...state, task];
-        }
+        _updateTaskState(task);
 
         if (task.status == DownloadStatus.completed) {
-          // If a playlist was specified, add the song to it
           if (targetPlaylistId != null) {
             _libraryRepo.addSongToPlaylist(targetPlaylistId, videoId);
             _ref.invalidate(playlistsProvider);
             _ref.invalidate(playlistSongsProvider(targetPlaylistId));
           }
-          // Cross-screen sync: invalidate library
           _ref.invalidate(libraryProvider);
           sub.cancel();
           _subscriptions.remove(task.id);
@@ -334,25 +321,22 @@ class DownloadQueueNotifier extends StateNotifier<List<DownloadTask>> {
   Future<void> _downloadSingleTask(String videoId, String taskId,
       {String? playlistTitle, String? targetPlaylistId}) async {
     final completer = Completer<void>();
-    final downloadStream = _repo.downloadAudioByVideoId(videoId, playlistName: playlistTitle);
+    final downloadStream = _repo.downloadAudioDirect(
+      videoId: videoId,
+      title: taskId, // Will be overridden by yt-dlp metadata
+      playlistName: playlistTitle,
+    );
     late StreamSubscription<DownloadTask> sub;
 
     sub = downloadStream.listen(
       (DownloadTask update) {
-        // Preserve original taskId
         final finalUpdate = update.copyWith(id: taskId);
         
         if (mounted) {
-          final idx = state.indexWhere((t) => t.id == taskId);
-          if (idx >= 0) {
-            final newState = List<DownloadTask>.from(state);
-            newState[idx] = finalUpdate;
-            state = newState;
-          }
+          _updateTaskState(finalUpdate);
         }
 
         if (finalUpdate.status == DownloadStatus.completed) {
-          // Add the downloaded song to the auto-created library playlist
           if (targetPlaylistId != null) {
             _libraryRepo.addSongToPlaylist(targetPlaylistId, videoId);
             _ref.invalidate(playlistsProvider);

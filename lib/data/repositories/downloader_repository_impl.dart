@@ -7,31 +7,27 @@ import 'package:mymusic/core/constants/app_constants.dart';
 import 'package:mymusic/core/extensions/extensions.dart';
 import 'package:mymusic/core/utils/media_scanner.dart';
 import 'package:mymusic/data/datasources/local/song_dao.dart';
-import 'package:mymusic/data/datasources/remote/youtube_datasource.dart';
 import 'package:mymusic/data/datasources/remote/chaquopy_datasource.dart';
 import 'package:mymusic/domain/entities/download_task.dart';
 import 'package:mymusic/domain/entities/playlist_entry.dart';
 import 'package:mymusic/domain/entities/song.dart';
 import 'package:mymusic/domain/repositories/i_downloader_repository.dart';
 
-/// Hybrid downloader implementation:
-///   • youtube_explode_dart → metadata, thumbnail URL, video validation
-///   • yt-dlp CLI            → actual audio file download (bypasses 403s)
+/// Downloader implementation powered entirely by yt-dlp (via Chaquopy).
+///
+/// yt-dlp handles metadata extraction, stream selection, and audio download.
+/// No separate youtube_explode dependency needed.
 class DownloaderRepositoryImpl implements IDownloaderRepository {
-  final IYoutubeDatasource _youtubeDatasource;
   final ChaquopyDatasource _chaquopyDatasource;
   final SongDao _songDao;
   final Dio _dio;
-  // Note: Chaquopy runs inside the process, so it cannot be cancelled easily via Process.kill.
   final Set<String> _cancelledTasks = {};
 
   DownloaderRepositoryImpl({
-    required IYoutubeDatasource youtubeDatasource,
     required ChaquopyDatasource chaquopyDatasource,
     required SongDao songDao,
     Dio? dio,
-  }) : _youtubeDatasource = youtubeDatasource,
-       _chaquopyDatasource = chaquopyDatasource,
+  }) : _chaquopyDatasource = chaquopyDatasource,
        _songDao = songDao,
        _dio = dio ?? Dio();
 
@@ -46,8 +42,16 @@ class DownloaderRepositoryImpl implements IDownloaderRepository {
   }
 
   @override
-  Future<VideoMetadata> fetchVideoMetadata(String videoId) {
-    return _youtubeDatasource.fetchMetadata(videoId);
+  Future<VideoMetadata> fetchVideoMetadata(String videoId) async {
+    final data = await _chaquopyDatasource.fetchVideoMetadata(videoId);
+    return VideoMetadata(
+      videoId: videoId,
+      title: data['title'] as String? ?? 'Unknown Title',
+      author: data['author'] as String? ?? 'Unknown Artist',
+      duration: Duration(seconds: (data['duration'] as num?)?.toInt() ?? 0),
+      thumbnailUrl: data['thumbnail'] as String? ??
+          'https://i.ytimg.com/vi/$videoId/hqdefault.jpg',
+    );
   }
 
   @override
@@ -80,15 +84,9 @@ class DownloaderRepositoryImpl implements IDownloaderRepository {
   }
 
   @override
-  Future<List<AudioStreamInfo>> getAudioStreams(String videoId) {
-    return _youtubeDatasource.getAudioStreams(videoId);
-  }
-
-  @override
-  Stream<DownloadTask> downloadAudio({
+  Stream<DownloadTask> downloadAudioDirect({
     required String videoId,
-    required VideoMetadata metadata,
-    required AudioStreamInfo stream,
+    required String title,
     String? playlistName,
   }) async* {
     final taskId = DateTime.now().microsecondsSinceEpoch.toString();
@@ -97,8 +95,8 @@ class DownloaderRepositoryImpl implements IDownloaderRepository {
       id: taskId,
       youtubeUrl: 'https://youtube.com/watch?v=$videoId',
       videoId: videoId,
-      title: metadata.title,
-      thumbnailUrl: metadata.thumbnailUrl,
+      title: title,
+      thumbnailUrl: 'https://i.ytimg.com/vi/$videoId/hqdefault.jpg',
       status: DownloadStatus.pending,
     );
 
@@ -120,47 +118,49 @@ class DownloaderRepositoryImpl implements IDownloaderRepository {
       await musicDir.create(recursive: true);
       await thumbDir.create(recursive: true);
 
-      final safeTitle = metadata.title.toSafeFilename();
+      final safeTitle = title.toSafeFilename();
       final thumbnailPath = '${thumbDir.path}/$videoId.jpg';
 
-      // ─── Step 1: Download thumbnail via Dio ─────────────
-      try {
-        await _dio.download(metadata.thumbnailUrl, thumbnailPath);
-      } catch (_) {
-        // Thumbnail failure is non-critical
-      }
-
-      // ─── Step 2: Download audio via Chaquopy yt-dlp ──────────
+      // ─── Step 1: Download audio via yt-dlp (also returns metadata) ────
       task = task.copyWith(status: DownloadStatus.downloading, progress: 0.0);
       yield task;
 
       if (_cancelledTasks.contains(taskId)) throw Exception("Cancelled");
 
-      // This handles YouTube's signature challenges internally via Python.
-      final outputPath = await _chaquopyDatasource.downloadAudio(
+      final result = await _chaquopyDatasource.downloadAudioFull(
         videoId: videoId,
         outputDir: musicDir.path,
         safeFilename: safeTitle,
-        onProgress: (progress, speed) {
-          // Chaquopy executeCode is blocking/async but doesn't easily stream progress back yet.
-          // The wrapper currently prints success at the end.
-        },
       );
+
+      final outputPath = result['path'] as String;
+      final metadata = result['metadata'] as Map<String, dynamic>? ?? {};
+      final author = metadata['author'] as String? ?? 'Unknown Artist';
+      final durationSecs = (metadata['duration'] as num?)?.toInt() ?? 0;
+      final thumbUrl = metadata['thumbnail'] as String? ??
+          'https://i.ytimg.com/vi/$videoId/hqdefault.jpg';
 
       yield task.copyWith(progress: 1.0);
 
-      // ─── Step 3: Save to database ───────────────────────
+      // ─── Step 2: Download thumbnail via Dio ─────────────
       task = task.copyWith(status: DownloadStatus.processing);
       yield task;
 
+      try {
+        await _dio.download(thumbUrl, thumbnailPath);
+      } catch (_) {
+        // Thumbnail failure is non-critical
+      }
+
+      // ─── Step 3: Save to database ───────────────────────
       final song = Song(
         id: '0', // Auto-assigned by Isar
         videoId: videoId,
-        title: metadata.title,
-        artist: metadata.author,
+        title: metadata['title'] as String? ?? title,
+        artist: author,
         localAudioPath: outputPath,
         localThumbnailPath: thumbnailPath,
-        duration: metadata.duration,
+        duration: Duration(seconds: durationSecs),
         dateAdded: DateTime.now(),
       );
 
@@ -184,59 +184,8 @@ class DownloaderRepositoryImpl implements IDownloaderRepository {
   }
 
   @override
-  Stream<DownloadTask> downloadAudioByVideoId(String videoId, {String? playlistName}) async* {
-    try {
-      final metadata = await fetchVideoMetadata(videoId);
-      final streams = await getAudioStreams(videoId);
-      
-      if (streams.isEmpty) {
-        throw Exception('No audio streams found for video $videoId');
-      }
-      
-      yield* downloadAudio(
-        videoId: videoId,
-        metadata: metadata,
-        stream: streams.first,
-        playlistName: playlistName,
-      );
-    } catch (e) {
-      yield DownloadTask(
-        id: DateTime.now().microsecondsSinceEpoch.toString(),
-        youtubeUrl: 'https://youtube.com/watch?v=$videoId',
-        videoId: videoId,
-        status: DownloadStatus.failed,
-        errorMessage: e.toString(),
-      );
-    }
-  }
-
-  @override
   Future<void> cancelDownload(String taskId) async {
     _cancelledTasks.add(taskId);
-  }
-
-  /// Parse yt-dlp speed string like "10.73MiB/s" to bytes/sec.
-  // ignore: unused_element
-  double _parseSpeed(String speed) {
-    if (speed.isEmpty) return 0;
-    try {
-      final match = RegExp(r'([\d.]+)\s*(KiB|MiB|GiB|B)').firstMatch(speed);
-      if (match == null) return 0;
-      final value = double.parse(match.group(1)!);
-      final unit = match.group(2)!;
-      switch (unit) {
-        case 'GiB':
-          return value * 1024 * 1024 * 1024;
-        case 'MiB':
-          return value * 1024 * 1024;
-        case 'KiB':
-          return value * 1024;
-        default:
-          return value;
-      }
-    } catch (_) {
-      return 0;
-    }
   }
 
   @override

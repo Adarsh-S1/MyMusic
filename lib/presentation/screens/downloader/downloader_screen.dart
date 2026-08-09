@@ -110,7 +110,7 @@ class _DownloaderScreenState extends ConsumerState<DownloaderScreen> {
                     ),
 
                   // Single Video Preview
-                  if (formState.metadata != null && formState.audioStreams != null) ...[
+                  if (formState.metadata != null) ...[
                     const SizedBox(height: 12),
                     Card(
                       clipBehavior: Clip.antiAlias,
@@ -146,8 +146,7 @@ class _DownloaderScreenState extends ConsumerState<DownloaderScreen> {
                                   onPressed: () {
                                     ref.read(downloadQueueProvider.notifier).enqueue(
                                       videoId: formState.videoId!,
-                                      metadata: formState.metadata!,
-                                      stream: formState.audioStreams!.first,
+                                      title: formState.metadata!.title,
                                     );
                                     _urlController.clear();
                                     ref.read(downloadFormProvider.notifier).clearForm();

@@ -51,3 +51,6 @@ macos/
 web/
 windows/
 test/
+
+implementation_plan.md
+task.md

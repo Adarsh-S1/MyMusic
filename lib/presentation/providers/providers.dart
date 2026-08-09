@@ -290,8 +290,9 @@ class DownloadQueueNotifier extends StateNotifier<List<DownloadTask>> {
     _subscriptions[videoId] = sub;
   }
 
-  /// Enqueue a playlist and start sequential processing
-  void enqueuePlaylist(List<PlaylistEntry> entries, String playlistTitle) {
+  /// Enqueue a playlist and start sequential processing.
+  /// Automatically creates a matching library playlist and adds songs to it.
+  void enqueuePlaylist(List<PlaylistEntry> entries, String playlistTitle) async {
     final newTasks = entries.map((e) => DownloadTask(
       id: DateTime.now().microsecondsSinceEpoch.toString() + e.videoId,
       youtubeUrl: 'https://youtube.com/watch?v=${e.videoId}',
@@ -301,10 +302,15 @@ class DownloadQueueNotifier extends StateNotifier<List<DownloadTask>> {
     )).toList();
     
     state = [...state, ...newTasks];
-    _processPlaylistQueue(playlistTitle);
+
+    // Create a library playlist with the same name as the YouTube playlist
+    final playlistId = await _libraryRepo.createPlaylist(playlistTitle);
+    _ref.invalidate(playlistsProvider);
+
+    _processPlaylistQueue(playlistTitle, targetPlaylistId: playlistId);
   }
 
-  Future<void> _processPlaylistQueue(String playlistTitle) async {
+  Future<void> _processPlaylistQueue(String playlistTitle, {String? targetPlaylistId}) async {
     if (_isProcessingPlaylist) return;
     _isProcessingPlaylist = true;
 
@@ -317,14 +323,16 @@ class DownloadQueueNotifier extends StateNotifier<List<DownloadTask>> {
         final task = state[nextTaskIndex];
         if (task.videoId == null) continue;
 
-        await _downloadSingleTask(task.videoId!, task.id, playlistTitle: playlistTitle);
+        await _downloadSingleTask(task.videoId!, task.id,
+            playlistTitle: playlistTitle, targetPlaylistId: targetPlaylistId);
       }
     } finally {
       _isProcessingPlaylist = false;
     }
   }
 
-  Future<void> _downloadSingleTask(String videoId, String taskId, {String? playlistTitle}) async {
+  Future<void> _downloadSingleTask(String videoId, String taskId,
+      {String? playlistTitle, String? targetPlaylistId}) async {
     final completer = Completer<void>();
     final downloadStream = _repo.downloadAudioByVideoId(videoId, playlistName: playlistTitle);
     late StreamSubscription<DownloadTask> sub;
@@ -344,6 +352,12 @@ class DownloadQueueNotifier extends StateNotifier<List<DownloadTask>> {
         }
 
         if (finalUpdate.status == DownloadStatus.completed) {
+          // Add the downloaded song to the auto-created library playlist
+          if (targetPlaylistId != null) {
+            _libraryRepo.addSongToPlaylist(targetPlaylistId, videoId);
+            _ref.invalidate(playlistsProvider);
+            _ref.invalidate(playlistSongsProvider(targetPlaylistId));
+          }
           _ref.invalidate(libraryProvider);
           sub.cancel();
           _subscriptions.remove(taskId);

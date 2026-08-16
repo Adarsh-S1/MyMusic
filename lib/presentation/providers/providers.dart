@@ -224,6 +224,11 @@ class DownloadQueueNotifier extends StateNotifier<List<DownloadTask>> {
   final Ref _ref;
   final Map<String, StreamSubscription<DownloadTask>> _subscriptions = {};
   bool _isProcessingPlaylist = false;
+  bool _isRetrying = false;
+
+  // Track the last playlist context so retries route to the correct library playlist
+  String? _lastPlaylistTitle;
+  String? _lastTargetPlaylistId;
 
   DownloadQueueNotifier(this._repo, this._libraryRepo, this._ref) : super([]);
 
@@ -293,6 +298,9 @@ class DownloadQueueNotifier extends StateNotifier<List<DownloadTask>> {
     // Create a library playlist with the same name as the YouTube playlist
     final playlistId = await _libraryRepo.createPlaylist(playlistTitle);
     _ref.invalidate(playlistsProvider);
+
+    _lastPlaylistTitle = playlistTitle;
+    _lastTargetPlaylistId = playlistId;
 
     _processPlaylistQueue(playlistTitle, targetPlaylistId: playlistId);
   }
@@ -385,6 +393,81 @@ class DownloadQueueNotifier extends StateNotifier<List<DownloadTask>> {
           status: DownloadStatus.cancelled,
           errorMessage: 'Cancelled by user',
         );
+    }
+  }
+
+  /// Retry a single failed task.
+  Future<void> retryTask(String taskId) async {
+    final idx = state.indexWhere((t) => t.id == taskId);
+    if (idx < 0) return;
+
+    final task = state[idx];
+    if (task.status != DownloadStatus.failed || task.videoId == null) return;
+
+    // Reset to pending
+    _updateTaskState(task.copyWith(
+      status: DownloadStatus.pending,
+      progress: 0.0,
+      errorMessage: null,
+    ));
+
+    // Small delay to avoid rate-limiting
+    await Future.delayed(const Duration(seconds: 2));
+    if (!mounted) return;
+
+    await _downloadSingleTask(
+      task.videoId!,
+      taskId,
+      playlistTitle: _lastPlaylistTitle,
+      targetPlaylistId: _lastTargetPlaylistId,
+    );
+  }
+
+  /// Retry all failed tasks sequentially with delays between each.
+  Future<void> retryAllFailed() async {
+    if (_isRetrying || _isProcessingPlaylist) return;
+    _isRetrying = true;
+
+    try {
+      // Snapshot the IDs of currently failed tasks
+      final failedIds = state
+          .where((t) => t.status == DownloadStatus.failed && t.videoId != null)
+          .map((t) => t.id)
+          .toList();
+
+      for (int i = 0; i < failedIds.length; i++) {
+        if (!mounted) break;
+
+        // Re-check the task is still failed (user might have retried individually)
+        final currentIdx = state.indexWhere(
+          (t) => t.id == failedIds[i] && t.status == DownloadStatus.failed,
+        );
+        if (currentIdx < 0) continue;
+        final task = state[currentIdx];
+        if (task.videoId == null) continue;
+
+        // Reset to pending
+        _updateTaskState(task.copyWith(
+          status: DownloadStatus.pending,
+          progress: 0.0,
+          errorMessage: null,
+        ));
+
+        // Delay between retries to respect rate limits (skip delay for first)
+        if (i > 0) {
+          await Future.delayed(const Duration(seconds: 5));
+          if (!mounted) break;
+        }
+
+        await _downloadSingleTask(
+          task.videoId!,
+          task.id,
+          playlistTitle: _lastPlaylistTitle,
+          targetPlaylistId: _lastTargetPlaylistId,
+        );
+      }
+    } finally {
+      _isRetrying = false;
     }
   }
 

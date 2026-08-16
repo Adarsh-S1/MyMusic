@@ -231,16 +231,22 @@ class _DownloaderScreenState extends ConsumerState<DownloaderScreen> {
             SliverPadding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               sliver: SliverToBoxAdapter(
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                child: Column(
                   children: [
-                    Text('Downloads', style: theme.textTheme.titleLarge),
-                    TextButton(
-                      onPressed: () => ref
-                          .read(downloadQueueProvider.notifier)
-                          .clearFinished(),
-                      child: const Text('Clear Finished'),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text('Downloads', style: theme.textTheme.titleLarge),
+                        TextButton(
+                          onPressed: () => ref
+                              .read(downloadQueueProvider.notifier)
+                              .clearFinished(),
+                          child: const Text('Clear Finished'),
+                        ),
+                      ],
                     ),
+                    // "Retry All" button — only when queue is fully done and has failures
+                    _RetryAllButton(),
                   ],
                 ),
               ),
@@ -376,9 +382,63 @@ class _DownloadTaskTile extends ConsumerWidget {
                     ],
                   ),
                 ),
+                // Retry button for failed tasks
+                if (task.status == DownloadStatus.failed)
+                  IconButton(
+                    icon: const Icon(Icons.refresh),
+                    tooltip: 'Retry',
+                    onPressed: () {
+                      ref.read(downloadQueueProvider.notifier).retryTask(taskId);
+                    },
+                  ),
               ],
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Shows a "Retry All Failed" button only when:
+/// 1. The entire queue is done (every task is completed, failed, or cancelled)
+/// 2. At least one task is in the failed state
+/// Hidden when downloads are still active or all succeeded.
+class _RetryAllButton extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final queue = ref.watch(downloadQueueProvider);
+
+    // Don't show if queue is empty
+    if (queue.isEmpty) return const SizedBox.shrink();
+
+    // Check if all tasks are in a terminal state
+    final allDone = queue.every((t) =>
+        t.status == DownloadStatus.completed ||
+        t.status == DownloadStatus.failed ||
+        t.status == DownloadStatus.cancelled);
+
+    // Check if at least one is failed
+    final hasFailed = queue.any((t) => t.status == DownloadStatus.failed);
+
+    if (!allDone || !hasFailed) return const SizedBox.shrink();
+
+    final failedCount = queue.where((t) => t.status == DownloadStatus.failed).length;
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 8, bottom: 4),
+      child: SizedBox(
+        width: double.infinity,
+        child: OutlinedButton.icon(
+          onPressed: () {
+            ref.read(downloadQueueProvider.notifier).retryAllFailed();
+          },
+          icon: const Icon(Icons.refresh),
+          label: Text('Retry All Failed ($failedCount)'),
+          style: OutlinedButton.styleFrom(
+            foregroundColor: Theme.of(context).colorScheme.error,
+            side: BorderSide(color: Theme.of(context).colorScheme.error.withValues(alpha: 0.5)),
+          ),
         ),
       ),
     );

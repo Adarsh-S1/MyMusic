@@ -328,10 +328,17 @@ class DownloadQueueNotifier extends StateNotifier<List<DownloadTask>> {
 
   Future<void> _downloadSingleTask(String videoId, String taskId,
       {String? playlistTitle, String? targetPlaylistId}) async {
+    // Look up the original title from the queued task
+    final existingTask = state.cast<DownloadTask?>().firstWhere(
+      (t) => t!.id == taskId,
+      orElse: () => null,
+    );
+    final originalTitle = existingTask?.title ?? videoId;
+
     final completer = Completer<void>();
     final downloadStream = _repo.downloadAudioDirect(
       videoId: videoId,
-      title: taskId, // Will be overridden by yt-dlp metadata
+      title: originalTitle,
       playlistName: playlistTitle,
     );
     late StreamSubscription<DownloadTask> sub;

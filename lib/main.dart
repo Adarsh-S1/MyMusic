@@ -292,8 +292,8 @@ class _AppShellState extends ConsumerState<AppShell> {
             selectedIndex: selectedIndex,
             onDestinationSelected: (index) {
               // Dismiss any open popup menus before navigating
-              Navigator.of(context, rootNavigator: true)
-                  .popUntil((route) => route is! PopupRoute);
+              // Navigator.of(context, rootNavigator: true)
+              //     .popUntil((route) => route is! PopupRoute);
               switch (index) {
                 case 0:
                   context.go('/home');

@@ -158,11 +158,17 @@ class _SongsTab extends ConsumerWidget {
                     ref.invalidate(libraryProvider);
                   } else if (value == 'queue') {
                     ref.read(playerProvider.notifier).addToQueue(song);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Added to queue')),
-                    );
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Added to queue')),
+                      );
+                    }
                   } else if (value == 'playlist') {
-                    _showAddToPlaylistDialog(context, ref, song);
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (context.mounted) {
+                        _showAddToPlaylistDialog(context, ref, song);
+                      }
+                    });
                   }
                 },
                 itemBuilder: (_) => [

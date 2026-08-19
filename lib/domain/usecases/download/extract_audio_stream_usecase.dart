@@ -1,12 +1,12 @@
 import 'package:mymusic/domain/repositories/i_downloader_repository.dart';
 
-/// Fetches audio streams from YouTube.
-class ExtractAudioStreamUsecase {
+/// Fetches video metadata from YouTube (via yt-dlp).
+class FetchVideoMetadataUsecase {
   final IDownloaderRepository _repository;
 
-  ExtractAudioStreamUsecase(this._repository);
+  FetchVideoMetadataUsecase(this._repository);
 
-  Future<List<AudioStreamInfo>> execute(String videoId) {
-    return _repository.getAudioStreams(videoId);
+  Future<VideoMetadata> execute(String videoId) {
+    return _repository.fetchVideoMetadata(videoId);
   }
 }

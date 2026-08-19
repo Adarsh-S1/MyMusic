@@ -1,0 +1,11 @@
+apply plugin: 'com.chaquo.python'
+
+chaquopy {
+    defaultConfig {
+        version = "3.14"
+        buildPython("python3")
+        pip {
+            install("yt-dlp")
+        }
+    }
+}

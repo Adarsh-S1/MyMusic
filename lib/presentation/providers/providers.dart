@@ -5,17 +5,18 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:isar/isar.dart';
 import 'package:path_provider/path_provider.dart';
 
+import 'package:mymusic/core/constants/app_constants.dart';
 import 'package:mymusic/core/utils/directory_scanner.dart';
 import 'package:mymusic/core/utils/permission_helper.dart';
 import 'package:mymusic/data/datasources/local/song_dao.dart';
 import 'package:mymusic/data/datasources/local/playlist_dao.dart';
-import 'package:mymusic/data/datasources/remote/youtube_datasource.dart';
 import 'package:mymusic/data/datasources/remote/chaquopy_datasource.dart';
 import 'package:mymusic/data/models/song_model.dart';
 import 'package:mymusic/data/models/playlist_model.dart';
 import 'package:mymusic/data/repositories/downloader_repository_impl.dart';
 import 'package:mymusic/data/repositories/library_repository_impl.dart';
 import 'package:mymusic/domain/entities/download_task.dart';
+import 'package:mymusic/domain/entities/playlist_entry.dart';
 import 'package:mymusic/domain/entities/song.dart';
 import 'package:mymusic/domain/entities/playlist.dart';
 import 'package:mymusic/domain/repositories/i_downloader_repository.dart';
@@ -55,16 +56,11 @@ final isarProvider = FutureProvider<Isar>((ref) async {
   return isar;
 });
 
-/// YouTube datasource provider.
-final youtubeDatasourceProvider = Provider<IYoutubeDatasource>((ref) {
-  final ds = YoutubeExplodeDatasource();
+/// Chaquopy datasource provider — persistent isolate for all yt-dlp calls.
+final chaquopyDatasourceProvider = Provider<ChaquopyDatasource>((ref) {
+  final ds = ChaquopyDatasource();
   ref.onDispose(() => ds.dispose());
   return ds;
-});
-
-/// Chaquopy datasource provider.
-final chaquopyDatasourceProvider = Provider<ChaquopyDatasource>((ref) {
-  return ChaquopyDatasource();
 });
 
 /// Song DAO provider.
@@ -83,10 +79,9 @@ final playlistDaoProvider = Provider<PlaylistDao>((ref) {
 // REPOSITORY PROVIDERS
 // ═══════════════════════════════════════════════════════════
 
-/// Downloader repository provider (hybrid: youtube_explode + chaquopy).
+/// Downloader repository provider (powered entirely by yt-dlp via Chaquopy).
 final downloaderRepositoryProvider = Provider<IDownloaderRepository>((ref) {
   return DownloaderRepositoryImpl(
-    youtubeDatasource: ref.watch(youtubeDatasourceProvider),
     chaquopyDatasource: ref.watch(chaquopyDatasourceProvider),
     songDao: ref.watch(songDaoProvider),
   );
@@ -111,7 +106,8 @@ class DownloadFormState {
   final String? playlistId;
   final VideoMetadata? metadata;
   final PlaylistMetadata? playlistMetadata;
-  final List<AudioStreamInfo>? audioStreams;
+  final String? playlistTitle;
+  final List<PlaylistEntry>? playlistEntries;
   final bool isLoading;
   final String? error;
 
@@ -121,7 +117,8 @@ class DownloadFormState {
     this.playlistId,
     this.metadata,
     this.playlistMetadata,
-    this.audioStreams,
+    this.playlistTitle,
+    this.playlistEntries,
     this.isLoading = false,
     this.error,
   });
@@ -132,7 +129,8 @@ class DownloadFormState {
     String? playlistId,
     VideoMetadata? metadata,
     PlaylistMetadata? playlistMetadata,
-    List<AudioStreamInfo>? audioStreams,
+    String? playlistTitle,
+    List<PlaylistEntry>? playlistEntries,
     bool? isLoading,
     String? error,
   }) {
@@ -142,7 +140,8 @@ class DownloadFormState {
       playlistId: playlistId ?? this.playlistId,
       metadata: metadata ?? this.metadata,
       playlistMetadata: playlistMetadata ?? this.playlistMetadata,
-      audioStreams: audioStreams ?? this.audioStreams,
+      playlistTitle: playlistTitle ?? this.playlistTitle,
+      playlistEntries: playlistEntries ?? this.playlistEntries,
       isLoading: isLoading ?? this.isLoading,
       error: error,
     );
@@ -162,14 +161,16 @@ class DownloadFormNotifier extends StateNotifier<DownloadFormState> {
       return;
     }
 
-    final playlistId = _repo.validateYoutubePlaylistUrl(url);
+    // Try playlist auto-detection first
+    final playlistId = YoutubePatterns.extractPlaylistId(url);
     if (playlistId != null) {
-      state = DownloadFormState(url: url, playlistId: playlistId, isLoading: true);
+      state = DownloadFormState(url: url, isLoading: true);
       try {
-        final metadata = await _repo.fetchPlaylistMetadata(playlistId);
+        final (title, entries) = await _repo.fetchPlaylistVideos(url);
         state = state.copyWith(
-          playlistMetadata: metadata,
           isLoading: false,
+          playlistTitle: title,
+          playlistEntries: entries,
         );
       } catch (e) {
         state = state.copyWith(
@@ -180,6 +181,7 @@ class DownloadFormNotifier extends StateNotifier<DownloadFormState> {
       return;
     }
 
+    // Fallback to single video detection
     final videoId = _repo.validateYoutubeUrl(url);
     if (videoId == null) {
       state = DownloadFormState(
@@ -193,10 +195,8 @@ class DownloadFormNotifier extends StateNotifier<DownloadFormState> {
 
     try {
       final metadata = await _repo.fetchVideoMetadata(videoId);
-      final streams = await _repo.getAudioStreams(videoId);
       state = state.copyWith(
         metadata: metadata,
-        audioStreams: streams,
         isLoading: false,
       );
     } catch (e) {
@@ -223,43 +223,49 @@ class DownloadQueueNotifier extends StateNotifier<List<DownloadTask>> {
   final ILibraryRepository _libraryRepo;
   final Ref _ref;
   final Map<String, StreamSubscription<DownloadTask>> _subscriptions = {};
+  bool _isProcessingPlaylist = false;
+  bool _isRetrying = false;
+
+  // Track the last playlist context so retries route to the correct library playlist
+  String? _lastPlaylistTitle;
+  String? _lastTargetPlaylistId;
 
   DownloadQueueNotifier(this._repo, this._libraryRepo, this._ref) : super([]);
 
-  /// Enqueue a download.
+  /// Helper to add or update a task in the state list.
+  void _updateTaskState(DownloadTask task) {
+    final idx = state.indexWhere((t) => t.id == task.id);
+    if (idx >= 0) {
+      final newState = List<DownloadTask>.from(state);
+      newState[idx] = task;
+      state = newState;
+    } else {
+      state = [...state, task];
+    }
+  }
+
+  /// Enqueue a single video download.
   Future<void> enqueue({
     required String videoId,
-    required VideoMetadata metadata,
-    required AudioStreamInfo stream,
+    required String title,
     String? targetPlaylistId,
   }) async {
-    final downloadStream = _repo.downloadAudio(
+    final downloadStream = _repo.downloadAudioDirect(
       videoId: videoId,
-      metadata: metadata,
-      stream: stream,
+      title: title,
     );
 
     late StreamSubscription<DownloadTask> sub;
     sub = downloadStream.listen(
       (DownloadTask task) {
-        // Update or add task in state
-        final idx = state.indexWhere((t) => t.id == task.id);
-        if (idx >= 0) {
-          final newState = List<DownloadTask>.from(state);
-          newState[idx] = task;
-          state = newState;
-        } else {
-          state = [...state, task];
-        }
+        _updateTaskState(task);
 
         if (task.status == DownloadStatus.completed) {
-          // If a playlist was specified, add the song to it
           if (targetPlaylistId != null) {
             _libraryRepo.addSongToPlaylist(targetPlaylistId, videoId);
             _ref.invalidate(playlistsProvider);
             _ref.invalidate(playlistSongsProvider(targetPlaylistId));
           }
-          // Cross-screen sync: invalidate library
           _ref.invalidate(libraryProvider);
           sub.cancel();
           _subscriptions.remove(task.id);
@@ -273,30 +279,105 @@ class DownloadQueueNotifier extends StateNotifier<List<DownloadTask>> {
         // Handle stream error
       },
     );
+    _subscriptions[videoId] = sub;
   }
 
-  /// Enqueue a whole playlist.
-  Future<void> enqueuePlaylist(PlaylistMetadata playlistMeta) async {
-    // 1. Create the playlist in the DB
-    final playlistId = await _libraryRepo.createPlaylist(playlistMeta.title);
+  /// Enqueue a playlist and start sequential processing.
+  /// Automatically creates a matching library playlist and adds songs to it.
+  void enqueuePlaylist(List<PlaylistEntry> entries, String playlistTitle) async {
+    final newTasks = entries.map((e) => DownloadTask(
+      id: DateTime.now().microsecondsSinceEpoch.toString() + e.videoId,
+      youtubeUrl: 'https://youtube.com/watch?v=${e.videoId}',
+      videoId: e.videoId,
+      title: e.title,
+      status: DownloadStatus.pending,
+    )).toList();
     
-    // 2. Enqueue each video in the playlist
-    for (final video in playlistMeta.videos) {
-      try {
-        final streams = await _repo.getAudioStreams(video.videoId);
-        if (streams.isNotEmpty) {
-          await enqueue(
-            videoId: video.videoId,
-            metadata: video,
-            stream: streams.first,
-            targetPlaylistId: playlistId,
-          );
-        }
-      } catch (e) {
-        // Skip failed videos
-        print('Failed to enqueue video from playlist: $e');
+    state = [...state, ...newTasks];
+
+    // Create a library playlist with the same name as the YouTube playlist
+    final playlistId = await _libraryRepo.createPlaylist(playlistTitle);
+    _ref.invalidate(playlistsProvider);
+
+    _lastPlaylistTitle = playlistTitle;
+    _lastTargetPlaylistId = playlistId;
+
+    _processPlaylistQueue(playlistTitle, targetPlaylistId: playlistId);
+  }
+
+  Future<void> _processPlaylistQueue(String playlistTitle, {String? targetPlaylistId}) async {
+    if (_isProcessingPlaylist) return;
+    _isProcessingPlaylist = true;
+
+    try {
+      while (true) {
+        if (!mounted) break;
+        final nextTaskIndex = state.indexWhere((t) => t.status == DownloadStatus.pending);
+        if (nextTaskIndex == -1) break; // Queue finished
+
+        final task = state[nextTaskIndex];
+        if (task.videoId == null) continue;
+
+        await _downloadSingleTask(task.videoId!, task.id,
+            playlistTitle: playlistTitle, targetPlaylistId: targetPlaylistId);
       }
+    } finally {
+      _isProcessingPlaylist = false;
     }
+  }
+
+  Future<void> _downloadSingleTask(String videoId, String taskId,
+      {String? playlistTitle, String? targetPlaylistId}) async {
+    final completer = Completer<void>();
+    final downloadStream = _repo.downloadAudioDirect(
+      videoId: videoId,
+      title: taskId, // Will be overridden by yt-dlp metadata
+      playlistName: playlistTitle,
+    );
+    late StreamSubscription<DownloadTask> sub;
+
+    sub = downloadStream.listen(
+      (DownloadTask update) {
+        final finalUpdate = update.copyWith(id: taskId);
+        
+        if (mounted) {
+          _updateTaskState(finalUpdate);
+        }
+
+        if (finalUpdate.status == DownloadStatus.completed) {
+          if (targetPlaylistId != null) {
+            _libraryRepo.addSongToPlaylist(targetPlaylistId, videoId);
+            _ref.invalidate(playlistsProvider);
+            _ref.invalidate(playlistSongsProvider(targetPlaylistId));
+          }
+          _ref.invalidate(libraryProvider);
+          sub.cancel();
+          _subscriptions.remove(taskId);
+          if (!completer.isCompleted) completer.complete();
+        } else if (finalUpdate.status == DownloadStatus.failed ||
+                   finalUpdate.status == DownloadStatus.cancelled) {
+          sub.cancel();
+          _subscriptions.remove(taskId);
+          if (!completer.isCompleted) completer.complete();
+        }
+      },
+      onError: (e) {
+        if (mounted) {
+          final idx = state.indexWhere((t) => t.id == taskId);
+          if (idx >= 0) {
+            state = [...state]..[idx] = state[idx].copyWith(
+              status: DownloadStatus.failed,
+              errorMessage: e.toString()
+            );
+          }
+        }
+        _subscriptions.remove(taskId);
+        if (!completer.isCompleted) completer.complete();
+      },
+    );
+    
+    _subscriptions[taskId] = sub;
+    await completer.future;
   }
 
   /// Cancel a download.
@@ -312,6 +393,81 @@ class DownloadQueueNotifier extends StateNotifier<List<DownloadTask>> {
           status: DownloadStatus.cancelled,
           errorMessage: 'Cancelled by user',
         );
+    }
+  }
+
+  /// Retry a single failed task.
+  Future<void> retryTask(String taskId) async {
+    final idx = state.indexWhere((t) => t.id == taskId);
+    if (idx < 0) return;
+
+    final task = state[idx];
+    if (task.status != DownloadStatus.failed || task.videoId == null) return;
+
+    // Reset to pending
+    _updateTaskState(task.copyWith(
+      status: DownloadStatus.pending,
+      progress: 0.0,
+      errorMessage: null,
+    ));
+
+    // Small delay to avoid rate-limiting
+    await Future.delayed(const Duration(seconds: 2));
+    if (!mounted) return;
+
+    await _downloadSingleTask(
+      task.videoId!,
+      taskId,
+      playlistTitle: _lastPlaylistTitle,
+      targetPlaylistId: _lastTargetPlaylistId,
+    );
+  }
+
+  /// Retry all failed tasks sequentially with delays between each.
+  Future<void> retryAllFailed() async {
+    if (_isRetrying || _isProcessingPlaylist) return;
+    _isRetrying = true;
+
+    try {
+      // Snapshot the IDs of currently failed tasks
+      final failedIds = state
+          .where((t) => t.status == DownloadStatus.failed && t.videoId != null)
+          .map((t) => t.id)
+          .toList();
+
+      for (int i = 0; i < failedIds.length; i++) {
+        if (!mounted) break;
+
+        // Re-check the task is still failed (user might have retried individually)
+        final currentIdx = state.indexWhere(
+          (t) => t.id == failedIds[i] && t.status == DownloadStatus.failed,
+        );
+        if (currentIdx < 0) continue;
+        final task = state[currentIdx];
+        if (task.videoId == null) continue;
+
+        // Reset to pending
+        _updateTaskState(task.copyWith(
+          status: DownloadStatus.pending,
+          progress: 0.0,
+          errorMessage: null,
+        ));
+
+        // Delay between retries to respect rate limits (skip delay for first)
+        if (i > 0) {
+          await Future.delayed(const Duration(seconds: 5));
+          if (!mounted) break;
+        }
+
+        await _downloadSingleTask(
+          task.videoId!,
+          task.id,
+          playlistTitle: _lastPlaylistTitle,
+          targetPlaylistId: _lastTargetPlaylistId,
+        );
+      }
+    } finally {
+      _isRetrying = false;
     }
   }
 

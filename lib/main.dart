@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:audio_service/audio_service.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:share_handler/share_handler.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import 'package:mymusic/presentation/providers/providers.dart';
 import 'package:mymusic/presentation/screens/home/home_screen.dart';
@@ -216,7 +217,17 @@ class _AppShellState extends ConsumerState<AppShell> {
   @override
   void initState() {
     super.initState();
+    _requestPermissions();
     _initShareHandler();
+  }
+
+  Future<void> _requestPermissions() async {
+    if (await Permission.manageExternalStorage.isDenied) {
+      await Permission.manageExternalStorage.request();
+    }
+    if (await Permission.storage.isDenied) {
+      await Permission.storage.request();
+    }
   }
 
   Future<void> _initShareHandler() async {

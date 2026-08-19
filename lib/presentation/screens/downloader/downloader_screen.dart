@@ -32,6 +32,8 @@ class _DownloaderScreenState extends ConsumerState<DownloaderScreen> {
   @override
   Widget build(BuildContext context) {
     final formState = ref.watch(downloadFormProvider);
+    final queueLength = ref.watch(downloadQueueProvider.select((q) => q.length));
+    final hasDownloads = queueLength > 0;
     final theme = Theme.of(context);
 
     return Scaffold(
@@ -49,40 +51,42 @@ class _DownloaderScreenState extends ConsumerState<DownloaderScreen> {
                   TextField(
                     controller: _urlController,
                     decoration: InputDecoration(
-                      hintText: 'Paste YouTube URL here...',
+                      hintText: 'Paste YouTube Video or Playlist URL...',
                       prefixIcon: const Icon(Icons.link),
-                      suffixIcon: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
+                      suffixIcon: Row(mainAxisSize: MainAxisSize.min, children: [
+                        IconButton(
+                          icon: const Icon(Icons.content_paste),
+                          onPressed: _pasteFromClipboard,
+                          tooltip: 'Paste',
+                        ),
+                        if (_urlController.text.isNotEmpty)
                           IconButton(
-                            icon: const Icon(Icons.content_paste),
-                            onPressed: _pasteFromClipboard,
-                            tooltip: 'Paste',
+                            icon: const Icon(Icons.clear),
+                            onPressed: () {
+                              _urlController.clear();
+                              ref.read(downloadFormProvider.notifier).clearForm();
+                            },
                           ),
-                          if (_urlController.text.isNotEmpty)
-                            IconButton(
-                              icon: const Icon(Icons.clear),
-                              onPressed: () {
-                                _urlController.clear();
-                                ref
-                                    .read(downloadFormProvider.notifier)
-                                    .clearForm();
-                              },
-                            ),
-                        ],
-                      ),
+                      ]),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(16),
                       ),
                       filled: true,
                     ),
-                    onChanged: (url) => ref
-                        .read(downloadFormProvider.notifier)
-                        .onUrlChanged(url),
+                    onChanged: (url) {
+                      ref.read(downloadFormProvider.notifier).onUrlChanged(url);
+                    },
                   ),
                   const SizedBox(height: 12),
 
-                  // Error message
+                  // Loading State
+                  if (formState.isLoading)
+                    const Padding(
+                      padding: EdgeInsets.all(16),
+                      child: Center(child: CircularProgressIndicator()),
+                    ),
+
+                  // Error State
                   if (formState.error != null)
                     Container(
                       padding: const EdgeInsets.all(12),
@@ -93,153 +97,79 @@ class _DownloaderScreenState extends ConsumerState<DownloaderScreen> {
                       child: Row(
                         children: [
                           Icon(Icons.error_outline,
-                              color: theme.colorScheme.error),
-                          const SizedBox(width: 8),
+                              color: theme.colorScheme.onErrorContainer),
+                          const SizedBox(width: 12),
                           Expanded(
                             child: Text(
                               formState.error!,
-                              style:
-                                  TextStyle(color: theme.colorScheme.error),
+                              style: TextStyle(
+                                  color: theme.colorScheme.onErrorContainer),
                             ),
                           ),
                         ],
                       ),
                     ),
 
-                  // Loading indicator
-                  if (formState.isLoading)
-                    const Padding(
-                      padding: EdgeInsets.all(24),
-                      child: Center(child: CircularProgressIndicator()),
-                    ),
-
-                  // Metadata Preview Card
+                  // Single Video Preview
                   if (formState.metadata != null) ...[
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 12),
                     Card(
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
+                      clipBehavior: Clip.antiAlias,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          AspectRatio(
+                            aspectRatio: 16 / 9,
+                            child: Image.network(
+                              formState.metadata!.thumbnailUrl,
+                              fit: BoxFit.cover,
+                            ),
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.all(16),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Container(
-                                  width: 80,
-                                  height: 60,
-                                  decoration: BoxDecoration(
-                                    color:
-                                        theme.colorScheme.primaryContainer,
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: Icon(
-                                    Icons.play_circle_outline,
-                                    color: theme.colorScheme.primary,
-                                    size: 32,
-                                  ),
+                                Text(
+                                  formState.metadata!.title,
+                                  style: theme.textTheme.titleMedium,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
                                 ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        formState.metadata!.title,
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: theme
-                                            .textTheme.titleSmall
-                                            ?.copyWith(
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        formState.metadata!.author,
-                                        style: theme
-                                            .textTheme.bodySmall
-                                            ?.copyWith(
-                                          color: theme.colorScheme
-                                              .onSurfaceVariant,
-                                        ),
-                                      ),
-                                      Text(
-                                        formState.metadata!.duration
-                                            .toHumanString(),
-                                        style: theme
-                                            .textTheme.bodySmall
-                                            ?.copyWith(
-                                          color: theme.colorScheme
-                                              .onSurfaceVariant,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  '${formState.metadata!.author} • ${formState.metadata!.duration.toHumanString()}',
+                                  style: theme.textTheme.bodyMedium?.copyWith(
+                                      color: theme.colorScheme.onSurfaceVariant),
+                                ),
+                                const SizedBox(height: 16),
+                                FilledButton.icon(
+                                  onPressed: () {
+                                    ref.read(downloadQueueProvider.notifier).enqueue(
+                                      videoId: formState.videoId!,
+                                      title: formState.metadata!.title,
+                                    );
+                                    _urlController.clear();
+                                    ref.read(downloadFormProvider.notifier).clearForm();
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(content: Text('Added to queue')),
+                                    );
+                                  },
+                                  icon: const Icon(Icons.download),
+                                  label: const Text('Download MP3'),
                                 ),
                               ],
                             ),
-                            const SizedBox(height: 16),
-                            SizedBox(
-                              width: double.infinity,
-                              child: FilledButton.icon(
-                                onPressed: () {
-                                  if (formState.audioStreams != null &&
-                                      formState
-                                          .audioStreams!.isNotEmpty) {
-                                    ref
-                                        .read(downloadQueueProvider
-                                            .notifier)
-                                        .enqueue(
-                                          videoId: formState.videoId!,
-                                          metadata:
-                                              formState.metadata!,
-                                          stream: formState
-                                              .audioStreams!.first,
-                                        );
-                                    _urlController.clear();
-                                    ref
-                                        .read(downloadFormProvider
-                                            .notifier)
-                                        .clearForm();
-                                    ScaffoldMessenger.of(context)
-                                        .showSnackBar(
-                                      const SnackBar(
-                                        content: Text(
-                                            'Download started!'),
-                                      ),
-                                    );
-                                  }
-                                },
-                                icon: const Icon(Icons.download),
-                                label: const Text('Download MP3'),
-                                style: FilledButton.styleFrom(
-                                  padding:
-                                      const EdgeInsets.symmetric(
-                                          vertical: 14),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius:
-                                        BorderRadius.circular(12),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
                     ),
                   ],
 
-                  // Playlist Metadata Preview Card
-                  if (formState.playlistMetadata != null) ...[
-                    const SizedBox(height: 16),
+                  // Playlist Preview
+                  if (formState.playlistTitle != null && formState.playlistEntries != null) ...[
+                    const SizedBox(height: 12),
                     Card(
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                      ),
                       child: Padding(
                         padding: const EdgeInsets.all(16),
                         child: Column(
@@ -247,60 +177,23 @@ class _DownloaderScreenState extends ConsumerState<DownloaderScreen> {
                           children: [
                             Row(
                               children: [
-                                Container(
-                                  width: 80,
-                                  height: 60,
-                                  decoration: BoxDecoration(
-                                    color: theme
-                                        .colorScheme.tertiaryContainer,
-                                    borderRadius:
-                                        BorderRadius.circular(8),
-                                  ),
-                                  child: Icon(
-                                    Icons.playlist_play,
-                                    color:
-                                        theme.colorScheme.tertiary,
-                                    size: 32,
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
+                                const Icon(Icons.queue_music, size: 40),
+                                const SizedBox(width: 16),
                                 Expanded(
                                   child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
+                                    crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
                                       Text(
-                                        formState
-                                            .playlistMetadata!.title,
+                                        formState.playlistTitle!,
+                                        style: theme.textTheme.titleMedium,
                                         maxLines: 2,
-                                        overflow:
-                                            TextOverflow.ellipsis,
-                                        style: theme
-                                            .textTheme.titleSmall
-                                            ?.copyWith(
-                                          fontWeight:
-                                              FontWeight.bold,
-                                        ),
+                                        overflow: TextOverflow.ellipsis,
                                       ),
                                       const SizedBox(height: 4),
                                       Text(
-                                        formState
-                                            .playlistMetadata!.author,
-                                        style: theme
-                                            .textTheme.bodySmall
-                                            ?.copyWith(
-                                          color: theme.colorScheme
-                                              .onSurfaceVariant,
-                                        ),
-                                      ),
-                                      Text(
-                                        '${formState.playlistMetadata!.videos.length} videos',
-                                        style: theme
-                                            .textTheme.bodySmall
-                                            ?.copyWith(
-                                          color: theme.colorScheme
-                                              .onSurfaceVariant,
-                                        ),
+                                        '${formState.playlistEntries!.length} videos',
+                                        style: theme.textTheme.bodyMedium?.copyWith(
+                                            color: theme.colorScheme.onSurfaceVariant),
                                       ),
                                     ],
                                   ),
@@ -308,41 +201,20 @@ class _DownloaderScreenState extends ConsumerState<DownloaderScreen> {
                               ],
                             ),
                             const SizedBox(height: 16),
-                            SizedBox(
-                              width: double.infinity,
-                              child: FilledButton.icon(
-                                onPressed: () {
-                                  ref
-                                      .read(downloadQueueProvider
-                                          .notifier)
-                                      .enqueuePlaylist(
-                                        formState.playlistMetadata!,
-                                      );
-                                  _urlController.clear();
-                                  ref
-                                      .read(downloadFormProvider
-                                          .notifier)
-                                      .clearForm();
-                                  ScaffoldMessenger.of(context)
-                                      .showSnackBar(
-                                    const SnackBar(
-                                      content: Text(
-                                          'Playlist download started!'),
-                                    ),
-                                  );
-                                },
-                                icon: const Icon(Icons.download),
-                                label: const Text('Download All'),
-                                style: FilledButton.styleFrom(
-                                  padding:
-                                      const EdgeInsets.symmetric(
-                                          vertical: 14),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius:
-                                        BorderRadius.circular(12),
-                                  ),
-                                ),
-                              ),
+                            FilledButton.icon(
+                              onPressed: () {
+                                ref.read(downloadQueueProvider.notifier).enqueuePlaylist(
+                                  formState.playlistEntries!,
+                                  formState.playlistTitle!,
+                                );
+                                _urlController.clear();
+                                ref.read(downloadFormProvider.notifier).clearForm();
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(content: Text('Added ${formState.playlistEntries!.length} songs to queue')),
+                                );
+                              },
+                              icon: const Icon(Icons.download),
+                              label: const Text('Download All'),
                             ),
                           ],
                         ),
@@ -354,61 +226,44 @@ class _DownloaderScreenState extends ConsumerState<DownloaderScreen> {
             ),
           ),
 
-          // ── Downloads header ──────────────────────────────────
-          Builder(
-            builder: (context) {
-              final downloadQueue = ref.watch(downloadQueueProvider);
-              if (downloadQueue.isEmpty) {
-                return const SliverToBoxAdapter();
-              }
-              return SliverPadding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                sliver: SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: Row(
+          // ── Downloads Queue ──────────────────────────────────
+          if (hasDownloads) ...[
+            SliverPadding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              sliver: SliverToBoxAdapter(
+                child: Column(
+                  children: [
+                    Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text(
-                          'Downloads',
-                          style: theme.textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
+                        Text('Downloads', style: theme.textTheme.titleLarge),
                         TextButton(
                           onPressed: () => ref
                               .read(downloadQueueProvider.notifier)
                               .clearFinished(),
-                          child: const Text('Clear finished'),
+                          child: const Text('Clear Finished'),
                         ),
                       ],
                     ),
-                  ),
+                    // "Retry All" button — only when queue is fully done and has failures
+                    _RetryAllButton(),
+                  ],
                 ),
-              );
-            },
-          ),
-
-          // ── Download list (Builder isolates rebuilds) ─────────
-          Builder(
-            builder: (context) {
-              final downloadQueue = ref.watch(downloadQueueProvider);
-              if (downloadQueue.isEmpty) {
-                return const SliverToBoxAdapter();
-              }
-              return SliverPadding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                sliver: SliverList.builder(
-                  itemCount: downloadQueue.length,
-                  itemBuilder: (context, index) =>
-                      _DownloadTaskTile(task: downloadQueue[index]),
+              ),
+            ),
+            SliverPadding(
+              padding: const EdgeInsets.only(left: 16, right: 16, bottom: 80),
+              sliver: SliverList(
+                delegate: SliverChildBuilderDelegate(
+                  (context, index) {
+                    final taskId = ref.read(downloadQueueProvider)[index].id;
+                    return _DownloadTaskTile(taskId: taskId);
+                  },
+                  childCount: queueLength,
                 ),
-              );
-            },
-          ),
-
-          // Bottom padding
-          const SliverToBoxAdapter(child: SizedBox(height: 16)),
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -416,87 +271,88 @@ class _DownloaderScreenState extends ConsumerState<DownloaderScreen> {
 }
 
 class _DownloadTaskTile extends ConsumerWidget {
-  final DownloadTask task;
-  const _DownloadTaskTile({required this.task});
+  final String taskId;
 
-  /// Extract a short, user-friendly error description from a raw exception string.
-  static String _shortErrorMessage(String raw) {
-    final lower = raw.toLowerCase();
-
-    if (lower.contains('403') || lower.contains('forbidden')) {
-      return 'Failed — access denied by YouTube (try again later)';
-    }
-    if (lower.contains('429') || lower.contains('too many requests')) {
-      return 'Failed — rate limited by YouTube (try again later)';
-    }
-    if (lower.contains('video unavailable')) {
-      return 'Failed — video is unavailable or private';
-    }
-    if (lower.contains('network') ||
-        lower.contains('socket') ||
-        lower.contains('connection')) {
-      return 'Failed — network error, check your connection';
-    }
-    if (lower.contains('cancelled')) {
-      return 'Cancelled';
-    }
-    if (lower.contains('storage') || lower.contains('permission')) {
-      return 'Failed — storage permission denied';
-    }
-
-    // Fallback: take first 80 chars of the exception message.
-    final trimmed = raw.length > 80 ? '${raw.substring(0, 80)}…' : raw;
-    return 'Failed — $trimmed';
-  }
+  const _DownloadTaskTile({required this.taskId});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
-    final isActive =
-        task.status == DownloadStatus.downloading ||
-        task.status == DownloadStatus.processing;
+    // Only watch this specific task, completely preventing parent/list rebuilds on progress ticks
+    final task = ref.watch(downloadQueueProvider.select((queue) {
+      for (final t in queue) {
+        if (t.id == taskId) return t;
+      }
+      return null;
+    }));
 
-    IconData statusIcon;
-    Color statusColor;
+    if (task == null) return const SizedBox.shrink();
+
+    final theme = Theme.of(context);
+    
     String statusLabel;
+    Color statusColor;
+
     switch (task.status) {
       case DownloadStatus.pending:
-        statusIcon = Icons.hourglass_empty;
+        statusLabel = 'Queued';
         statusColor = theme.colorScheme.onSurfaceVariant;
-        statusLabel = 'Waiting...';
+        break;
       case DownloadStatus.downloading:
-        statusIcon = Icons.download;
+        statusLabel = 'Downloading';
         statusColor = theme.colorScheme.primary;
-        statusLabel = 'Downloading...';
+        break;
       case DownloadStatus.processing:
-        statusIcon = Icons.settings;
-        statusColor = theme.colorScheme.tertiary;
-        statusLabel = 'Saving to library...';
+        statusLabel = 'Processing';
+        statusColor = theme.colorScheme.secondary;
+        break;
       case DownloadStatus.completed:
-        statusIcon = Icons.check_circle;
-        statusColor = Colors.green;
         statusLabel = 'Completed';
+        statusColor = Colors.green;
+        break;
       case DownloadStatus.failed:
-        statusIcon = Icons.error;
-        statusColor = theme.colorScheme.error;
         statusLabel = 'Failed';
+        statusColor = theme.colorScheme.error;
+        break;
       case DownloadStatus.cancelled:
-        statusIcon = Icons.cancel;
-        statusColor = theme.colorScheme.onSurfaceVariant;
         statusLabel = 'Cancelled';
+        statusColor = theme.colorScheme.error;
+        break;
     }
 
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Padding(
         padding: const EdgeInsets.all(12),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               children: [
-                Icon(statusIcon, color: statusColor),
+                if (task.thumbnailUrl != null)
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: Image.network(
+                      task.thumbnailUrl!,
+                      width: 60,
+                      height: 45,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => Container(
+                        width: 60,
+                        height: 45,
+                        color: theme.colorScheme.surfaceContainerHighest,
+                        child: const Icon(Icons.music_note),
+                      ),
+                    ),
+                  )
+                else
+                  Container(
+                    width: 60,
+                    height: 45,
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(Icons.music_note),
+                  ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
@@ -511,48 +367,78 @@ class _DownloadTaskTile extends ConsumerWidget {
                       const SizedBox(height: 2),
                       Text(
                         statusLabel,
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: statusColor,
-                        ),
+                        style: theme.textTheme.bodySmall?.copyWith(color: statusColor),
                       ),
                       if (task.errorMessage != null)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 4),
-                          child: Text(
-                            _shortErrorMessage(task.errorMessage!),
-                            style: TextStyle(
-                              color: theme.colorScheme.error,
-                              fontSize: 12,
-                            ),
+                        Text(
+                          task.errorMessage!,
+                          style: TextStyle(
+                            color: theme.colorScheme.error,
+                            fontSize: 12,
                           ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
                         ),
                     ],
                   ),
                 ),
-                if (isActive)
+                // Retry button for failed tasks
+                if (task.status == DownloadStatus.failed)
                   IconButton(
-                    icon: const Icon(Icons.close),
-                    onPressed: () => ref
-                        .read(downloadQueueProvider.notifier)
-                        .cancelDownload(task.id),
+                    icon: const Icon(Icons.refresh),
+                    tooltip: 'Retry',
+                    onPressed: () {
+                      ref.read(downloadQueueProvider.notifier).retryTask(taskId);
+                    },
                   ),
               ],
             ),
-            if (isActive) ...[
-              const SizedBox(height: 8),
-              // Use indeterminate bar since Chaquopy can't report real-time progress
-              ClipRRect(
-                borderRadius: BorderRadius.circular(4),
-                child: LinearProgressIndicator(
-                  value: task.progress > 0 && task.progress < 1.0
-                      ? task.progress
-                      : null,
-                  minHeight: 6,
-                  backgroundColor: theme.colorScheme.surfaceContainerHighest,
-                ),
-              ),
-            ],
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Shows a "Retry All Failed" button only when:
+/// 1. The entire queue is done (every task is completed, failed, or cancelled)
+/// 2. At least one task is in the failed state
+/// Hidden when downloads are still active or all succeeded.
+class _RetryAllButton extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final queue = ref.watch(downloadQueueProvider);
+
+    // Don't show if queue is empty
+    if (queue.isEmpty) return const SizedBox.shrink();
+
+    // Check if all tasks are in a terminal state
+    final allDone = queue.every((t) =>
+        t.status == DownloadStatus.completed ||
+        t.status == DownloadStatus.failed ||
+        t.status == DownloadStatus.cancelled);
+
+    // Check if at least one is failed
+    final hasFailed = queue.any((t) => t.status == DownloadStatus.failed);
+
+    if (!allDone || !hasFailed) return const SizedBox.shrink();
+
+    final failedCount = queue.where((t) => t.status == DownloadStatus.failed).length;
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 8, bottom: 4),
+      child: SizedBox(
+        width: double.infinity,
+        child: OutlinedButton.icon(
+          onPressed: () {
+            ref.read(downloadQueueProvider.notifier).retryAllFailed();
+          },
+          icon: const Icon(Icons.refresh),
+          label: Text('Retry All Failed ($failedCount)'),
+          style: OutlinedButton.styleFrom(
+            foregroundColor: Theme.of(context).colorScheme.error,
+            side: BorderSide(color: Theme.of(context).colorScheme.error.withValues(alpha: 0.5)),
+          ),
         ),
       ),
     );

@@ -1,6 +1,7 @@
 import 'package:mymusic/domain/entities/download_task.dart';
+import 'package:mymusic/domain/entities/playlist_entry.dart';
 
-/// Video metadata fetched from YouTube before download.
+/// Video metadata fetched from YouTube (via yt-dlp) before or during download.
 class VideoMetadata {
   final String videoId;
   final String title;
@@ -32,21 +33,6 @@ class PlaylistMetadata {
   });
 }
 
-/// Audio stream info from YouTube.
-class AudioStreamInfo {
-  final String url;
-  final int bitrate;
-  final String codec;
-  final int sizeBytes;
-
-  const AudioStreamInfo({
-    required this.url,
-    required this.bitrate,
-    required this.codec,
-    required this.sizeBytes,
-  });
-}
-
 /// Abstract contract for the downloader repository.
 abstract class IDownloaderRepository {
   /// Validates a YouTube URL and returns the video ID, or null if invalid.
@@ -55,23 +41,24 @@ abstract class IDownloaderRepository {
   /// Validates a YouTube URL and returns the playlist ID, or null if invalid.
   String? validateYoutubePlaylistUrl(String url);
 
-  /// Fetches metadata for a YouTube video.
+  /// Fetches metadata for a YouTube video (powered by yt-dlp, no download).
   Future<VideoMetadata> fetchVideoMetadata(String videoId);
 
   /// Fetches metadata for a YouTube playlist.
   Future<PlaylistMetadata> fetchPlaylistMetadata(String playlistId);
 
-  /// Gets available audio streams for a video.
-  Future<List<AudioStreamInfo>> getAudioStreams(String videoId);
-
-  /// Downloads audio, converts to MP3, embeds tags, saves to disk and DB.
+  /// Downloads audio using yt-dlp. Stream selection is handled internally.
   /// Emits progress updates via the returned stream.
-  Stream<DownloadTask> downloadAudio({
+  Stream<DownloadTask> downloadAudioDirect({
     required String videoId,
-    required VideoMetadata metadata,
-    required AudioStreamInfo stream,
+    required String title,
+    String? playlistName,
   });
 
   /// Cancels an active download.
   Future<void> cancelDownload(String taskId);
+
+  /// Extracts the list of videos from a YouTube playlist URL.
+  /// Returns (playlist title, list of PlaylistEntry).
+  Future<(String, List<PlaylistEntry>)> fetchPlaylistVideos(String playlistUrl);
 }

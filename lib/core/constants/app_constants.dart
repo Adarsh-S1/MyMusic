@@ -7,6 +7,10 @@ class AppConstants {
   static const String appName = 'YT-Groove';
   static const String appVersion = '1.0.0';
 
+  // Storage paths
+  static const String baseMusicDir = '/storage/emulated/0/Music/YT-Groove';
+  static const String baseThumbnailDir = '/storage/emulated/0/Pictures/YT-Groove';
+
   // Public shared storage directory names (persists after app uninstall)
   static const String publicMusicDir = 'YT-Groove';
   static const String publicThumbnailDir = 'YT-Groove';
@@ -42,6 +46,10 @@ class AppConstants {
   // Audio notification
   static const String audioNotificationChannelId = 'com.example.mymusic.channel.audio';
   static const String audioNotificationChannelName = 'YT-Groove Playback';
+
+  // Download notification
+  static const String downloadNotificationChannelId = 'com.example.mymusic.channel.download';
+  static const String downloadNotificationChannelName = 'YT-Groove Downloads';
 }
 
 /// Supported YouTube URL regex patterns.
@@ -68,6 +76,16 @@ class YoutubePatterns {
     r'^https?://m\.youtube\.com/watch\?.*v=([a-zA-Z0-9_-]{11})',
   );
 
+  /// Matches the `list=PLAYLIST_ID` parameter in any YouTube URL.
+  static final RegExp playlistParam = RegExp(
+    r'[?&]list=([a-zA-Z0-9_-]+)',
+  );
+
+  /// Matches a pure playlist URL: youtube.com/playlist?list=PLAYLIST_ID
+  static final RegExp playlistUrl = RegExp(
+    r'^https?://(www\.)?youtube\.com/playlist\?list=([a-zA-Z0-9_-]+)',
+  );
+
   /// Extracts video ID from any supported YouTube URL format.
   static String? extractVideoId(String url) {
     RegExpMatch? match;
@@ -87,31 +105,9 @@ class YoutubePatterns {
     return null;
   }
 
-  /// Matches YouTube playlist URLs: youtube.com/playlist?list=PLAYLIST_ID
-  static final RegExp playlistUrl = RegExp(
-    r'^https?://(www\.|m\.)?youtube\.com/playlist\?.*list=([a-zA-Z0-9_-]+)',
-  );
-
-  /// Matches playlist ID embedded in watch URLs: youtube.com/watch?v=...&list=PLAYLIST_ID
-  static final RegExp watchWithPlaylist = RegExp(
-    r'^https?://(www\.|m\.)?youtube\.com/watch\?.*list=([a-zA-Z0-9_-]+)',
-  );
-
-  /// Extracts playlist ID from a YouTube URL, or null if not a playlist URL.
+  /// Extracts playlist ID from any YouTube URL that contains `list=` parameter.
   static String? extractPlaylistId(String url) {
-    RegExpMatch? match;
-
-    match = playlistUrl.firstMatch(url);
-    if (match != null) return match.group(2);
-
-    match = watchWithPlaylist.firstMatch(url);
-    if (match != null) return match.group(2);
-
-    return null;
-  }
-
-  /// Returns true if the URL is a playlist URL (not just a video with list param).
-  static bool isPlaylistUrl(String url) {
-    return playlistUrl.hasMatch(url.trim());
+    final match = playlistParam.firstMatch(url);
+    return match?.group(1);
   }
 }

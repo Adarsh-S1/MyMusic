@@ -9,13 +9,13 @@ class StartDownloadUsecase {
 
   Stream<DownloadTask> execute({
     required String videoId,
-    required VideoMetadata metadata,
-    required AudioStreamInfo stream,
+    required String title,
+    String? playlistName,
   }) {
-    return _repository.downloadAudio(
+    return _repository.downloadAudioDirect(
       videoId: videoId,
-      metadata: metadata,
-      stream: stream,
+      title: title,
+      playlistName: playlistName,
     );
   }
 }

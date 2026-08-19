@@ -132,117 +132,72 @@ class _SongsTab extends ConsumerWidget {
           itemCount: songs.length,
           itemBuilder: (context, index) {
             final song = songs[index];
-            return Dismissible(
-              key: Key(song.videoId),
-              direction: DismissDirection.endToStart,
-              background: Container(
-                alignment: Alignment.centerRight,
-                padding: const EdgeInsets.only(right: 20),
-                color: theme.colorScheme.error,
-                child: const Icon(Icons.delete, color: Colors.white),
+            return ListTile(
+              leading: SongThumbnail(
+                thumbnailPath: song.localThumbnailPath,
+                width: 48,
+                height: 48,
+                borderRadius: 8,
               ),
-              confirmDismiss: (_) async {
-                return await showDialog<bool>(
-                  context: context,
-                  builder: (ctx) => AlertDialog(
-                    title: const Text('Delete Song'),
-                    content: Text(
-                      'Delete "${song.title}"? This will also remove the file.',
-                    ),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(ctx, false),
-                        child: const Text('Cancel'),
-                      ),
-                      TextButton(
-                        onPressed: () => Navigator.pop(ctx, true),
-                        child: Text(
-                          'Delete',
-                          style: TextStyle(color: theme.colorScheme.error),
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              },
-              onDismissed: (_) async {
-                await ref
-                    .read(libraryRepositoryProvider)
-                    .deleteSong(song.videoId);
-                ref.invalidate(libraryProvider);
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Deleted "${song.title}"')),
-                  );
-                }
-              },
-              child: ListTile(
-                leading: SongThumbnail(
-                  thumbnailPath: song.localThumbnailPath,
-                  width: 48,
-                  height: 48,
-                  borderRadius: 8,
-                ),
-                title: Text(
-                  song.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                subtitle: Text(
-                  '${song.artist ?? 'Unknown Artist'} • ${song.duration.toHumanString()}',
-                  style: theme.textTheme.bodySmall,
-                ),
-                trailing: PopupMenuButton<String>(
-                  onSelected: (value) async {
-                    if (value == 'delete') {
-                      await ref
-                          .read(libraryRepositoryProvider)
-                          .deleteSong(song.videoId);
-                      ref.invalidate(libraryProvider);
-                    } else if (value == 'queue') {
-                      ref.read(playerProvider.notifier).addToQueue(song);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Added to queue')),
-                      );
-                    } else if (value == 'playlist') {
-                      _showAddToPlaylistDialog(context, ref, song);
-                    }
-                  },
-                  itemBuilder: (_) => [
-                    const PopupMenuItem(
-                      value: 'queue',
-                      child: ListTile(
-                        leading: Icon(Icons.queue_music),
-                        title: Text('Add to queue'),
-                      ),
-                    ),
-                    const PopupMenuItem(
-                      value: 'playlist',
-                      child: ListTile(
-                        leading: Icon(Icons.playlist_add),
-                        title: Text('Add to playlist'),
-                      ),
-                    ),
-                    PopupMenuItem(
-                      value: 'delete',
-                      child: ListTile(
-                        leading: Icon(
-                          Icons.delete,
-                          color: theme.colorScheme.error,
-                        ),
-                        title: Text(
-                          'Delete',
-                          style: TextStyle(color: theme.colorScheme.error),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                onTap: () {
-                  ref.read(playerProvider.notifier).playQueue(songs, index);
-                  context.push('/now-playing');
+              title: Text(
+                song.title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              subtitle: Text(
+                '${song.artist ?? 'Unknown Artist'} • ${song.duration.toHumanString()}',
+                style: theme.textTheme.bodySmall,
+              ),
+              trailing: PopupMenuButton<String>(
+                onSelected: (value) async {
+                  if (value == 'delete') {
+                    await ref
+                        .read(libraryRepositoryProvider)
+                        .deleteSong(song.videoId);
+                    ref.invalidate(libraryProvider);
+                  } else if (value == 'queue') {
+                    ref.read(playerProvider.notifier).addToQueue(song);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Added to queue')),
+                    );
+                  } else if (value == 'playlist') {
+                    _showAddToPlaylistDialog(context, ref, song);
+                  }
                 },
+                itemBuilder: (_) => [
+                  const PopupMenuItem(
+                    value: 'queue',
+                    child: ListTile(
+                      leading: Icon(Icons.queue_music),
+                      title: Text('Add to queue'),
+                    ),
+                  ),
+                  const PopupMenuItem(
+                    value: 'playlist',
+                    child: ListTile(
+                      leading: Icon(Icons.playlist_add),
+                      title: Text('Add to playlist'),
+                    ),
+                  ),
+                  PopupMenuItem(
+                    value: 'delete',
+                    child: ListTile(
+                      leading: Icon(
+                        Icons.delete,
+                        color: theme.colorScheme.error,
+                      ),
+                      title: Text(
+                        'Delete',
+                        style: TextStyle(color: theme.colorScheme.error),
+                      ),
+                    ),
+                  ),
+                ],
               ),
+              onTap: () {
+                ref.read(playerProvider.notifier).playQueue(songs, index);
+                context.push('/now-playing');
+              },
             );
           },
         );

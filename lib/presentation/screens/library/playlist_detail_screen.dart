@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:mymusic/core/extensions/extensions.dart';
 import 'package:mymusic/presentation/providers/providers.dart';
 import 'package:mymusic/presentation/widgets/song_thumbnail.dart';
@@ -110,6 +111,7 @@ class PlaylistDetailScreen extends ConsumerWidget {
                         ref
                             .read(playerProvider.notifier)
                             .playQueue(songs, index);
+                        context.push('/now-playing');
                       },
                     );
                   },
@@ -123,9 +125,12 @@ class PlaylistDetailScreen extends ConsumerWidget {
       ),
       floatingActionButton: (songsAsync.valueOrNull?.isNotEmpty ?? false)
           ? FloatingActionButton.extended(
-              onPressed: () => ref
-                  .read(playerProvider.notifier)
-                  .playQueue(songsAsync.value!, 0),
+              onPressed: () {
+                ref
+                    .read(playerProvider.notifier)
+                    .playQueue(songsAsync.value!, 0);
+                context.push('/now-playing');
+              },
               label: const Text('Play All'),
               icon: const Icon(Icons.play_arrow),
             )

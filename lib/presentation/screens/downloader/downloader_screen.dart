@@ -259,29 +259,30 @@ class _DownloaderScreenState extends ConsumerState<DownloaderScreen> {
 
           // ── Downloads Queue ──────────────────────────────────
           if (hasDownloads) ...[
-            // SliverPadding(
-            //   padding: const EdgeInsets.symmetric(horizontal: 16),
-            //   sliver: SliverToBoxAdapter(
-            //     child: Column(
-            //       children: [
-            //         Row(
-            //           mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            //           children: [
-            //             Text('Downloads', style: theme.textTheme.titleLarge),
-            //             TextButton(
-            //               onPressed: () => ref
-            //                   .read(downloadQueueProvider.notifier)
-            //                   .clearFinished(),
-            //               child: const Text('Clear Finished'),
-            //             ),
-            //           ],
-            //         ),
-            //         // "Retry All" button — only when queue is fully done and has failures
-            //         _RetryAllButton(),
-            //       ],
-            //     ),
-            //   ),
-            // ),
+            SliverPadding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              sliver: SliverToBoxAdapter(
+                child: Column(
+                  children: [
+                    //         Row(
+                    //           mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    //           children: [
+                    //             Text('Downloads', style: theme.textTheme.titleLarge),
+                    //             TextButton(
+                    //               onPressed: () => ref
+                    //                   .read(downloadQueueProvider.notifier)
+                    //                   .clearFinished(),
+                    //               child: const Text('Clear Finished'),
+                    //             ),
+                    //           ],
+                    //         ),
+
+                    // "Retry All" button — only when queue is fully done and has failures
+                    _RetryAllButton(),
+                  ],
+                ),
+              ),
+            ),
             SliverPadding(
               padding: const EdgeInsets.only(left: 16, right: 16, bottom: 80),
               sliver: SliverList(

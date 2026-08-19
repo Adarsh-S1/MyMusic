@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:mymusic/core/extensions/extensions.dart';
 import 'package:mymusic/domain/entities/download_task.dart';
 import 'package:mymusic/presentation/providers/providers.dart';
+import 'package:mymusic/presentation/screens/downloader/playlist_preview_card.dart';
 
 class DownloaderScreen extends ConsumerStatefulWidget {
   const DownloaderScreen({super.key});
@@ -183,73 +184,14 @@ class _DownloaderScreenState extends ConsumerState<DownloaderScreen> {
                     ),
                   ],
 
-                  // Playlist Preview
+                  // Playlist Preview with song selection
                   if (formState.playlistTitle != null &&
                       formState.playlistEntries != null) ...[
                     const SizedBox(height: 12),
-                    Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                const Icon(Icons.queue_music, size: 40),
-                                const SizedBox(width: 16),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        formState.playlistTitle!,
-                                        style: theme.textTheme.titleMedium,
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        '${formState.playlistEntries!.length} videos',
-                                        style: theme.textTheme.bodyMedium
-                                            ?.copyWith(
-                                              color: theme
-                                                  .colorScheme
-                                                  .onSurfaceVariant,
-                                            ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 16),
-                            FilledButton.icon(
-                              onPressed: () {
-                                ref
-                                    .read(downloadQueueProvider.notifier)
-                                    .enqueuePlaylist(
-                                      formState.playlistEntries!,
-                                      formState.playlistTitle!,
-                                    );
-                                _urlController.clear();
-                                ref
-                                    .read(downloadFormProvider.notifier)
-                                    .clearForm();
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(
-                                      'Added ${formState.playlistEntries!.length} songs to queue',
-                                    ),
-                                  ),
-                                );
-                              },
-                              icon: const Icon(Icons.download),
-                              label: const Text('Download All'),
-                            ),
-                          ],
-                        ),
-                      ),
+                    PlaylistPreviewCard(
+                      playlistTitle: formState.playlistTitle!,
+                      entries: formState.playlistEntries!,
+                      urlController: _urlController,
                     ),
                   ],
                 ],

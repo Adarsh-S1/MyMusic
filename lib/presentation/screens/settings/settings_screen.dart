@@ -42,7 +42,9 @@ class SettingsScreen extends ConsumerWidget {
           SwitchListTile(
             secondary: const Icon(Icons.auto_fix_high),
             title: const Text('Auto-fetch Metadata'),
-            subtitle: const Text('Automatically fetch title & artist from YouTube'),
+            subtitle: const Text(
+              'Automatically fetch title & artist from YouTube',
+            ),
             value: true,
             onChanged: (_) {},
           ),
@@ -76,10 +78,14 @@ class SettingsScreen extends ConsumerWidget {
       context: context,
       builder: (ctx) => SimpleDialog(
         title: const Text('Download Quality'),
-        children: ['128 kbps', '192 kbps', '320 kbps'].map((q) => SimpleDialogOption(
-          child: Text(q),
-          onPressed: () => Navigator.pop(ctx),
-        )).toList(),
+        children: ['128 kbps', '192 kbps', '320 kbps']
+            .map(
+              (q) => SimpleDialogOption(
+                child: Text(q),
+                onPressed: () => Navigator.pop(ctx),
+              ),
+            )
+            .toList(),
       ),
     );
   }
@@ -89,10 +95,14 @@ class SettingsScreen extends ConsumerWidget {
       context: context,
       builder: (ctx) => SimpleDialog(
         title: const Text('Theme'),
-        children: ['System', 'Light', 'Dark'].map((t) => SimpleDialogOption(
-          child: Text(t),
-          onPressed: () => Navigator.pop(ctx),
-        )).toList(),
+        children: ['System', 'Light', 'Dark']
+            .map(
+              (t) => SimpleDialogOption(
+                child: Text(t),
+                onPressed: () => Navigator.pop(ctx),
+              ),
+            )
+            .toList(),
       ),
     );
   }

@@ -149,57 +149,9 @@ class _SongsTab extends ConsumerWidget {
                 '${song.artist ?? 'Unknown Artist'} • ${song.duration.toHumanString()}',
                 style: theme.textTheme.bodySmall,
               ),
-              trailing: PopupMenuButton<String>(
-                onSelected: (value) async {
-                  if (value == 'delete') {
-                    await ref
-                        .read(libraryRepositoryProvider)
-                        .deleteSong(song.videoId);
-                    ref.invalidate(libraryProvider);
-                  } else if (value == 'queue') {
-                    ref.read(playerProvider.notifier).addToQueue(song);
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Added to queue')),
-                      );
-                    }
-                  } else if (value == 'playlist') {
-                    WidgetsBinding.instance.addPostFrameCallback((_) {
-                      if (context.mounted) {
-                        _showAddToPlaylistDialog(context, ref, song);
-                      }
-                    });
-                  }
-                },
-                itemBuilder: (_) => [
-                  const PopupMenuItem(
-                    value: 'queue',
-                    child: ListTile(
-                      leading: Icon(Icons.queue_music),
-                      title: Text('Add to queue'),
-                    ),
-                  ),
-                  const PopupMenuItem(
-                    value: 'playlist',
-                    child: ListTile(
-                      leading: Icon(Icons.playlist_add),
-                      title: Text('Add to playlist'),
-                    ),
-                  ),
-                  PopupMenuItem(
-                    value: 'delete',
-                    child: ListTile(
-                      leading: Icon(
-                        Icons.delete,
-                        color: theme.colorScheme.error,
-                      ),
-                      title: Text(
-                        'Delete',
-                        style: TextStyle(color: theme.colorScheme.error),
-                      ),
-                    ),
-                  ),
-                ],
+              trailing: IconButton(
+                icon: const Icon(Icons.more_vert),
+                onPressed: () => _showSongOptionsBottomSheet(context, ref, song, theme),
               ),
               onTap: () {
                 ref.read(playerProvider.notifier).playQueue(songs, index);
@@ -211,6 +163,59 @@ class _SongsTab extends ConsumerWidget {
       },
       loading: () => const Center(child: CircularProgressIndicator()),
       error: (e, _) => Center(child: Text('Error: $e')),
+    );
+  }
+
+  void _showSongOptionsBottomSheet(
+    BuildContext context,
+    WidgetRef ref,
+    Song song,
+    ThemeData theme,
+  ) {
+    showModalBottomSheet(
+      context: context,
+      useRootNavigator: true,
+      builder: (ctx) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.queue_music),
+                title: const Text('Add to queue'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  ref.read(playerProvider.notifier).addToQueue(song);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Added to queue')),
+                  );
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.playlist_add),
+                title: const Text('Add to playlist'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (context.mounted) {
+                      _showAddToPlaylistDialog(context, ref, song);
+                    }
+                  });
+                },
+              ),
+              ListTile(
+                leading: Icon(Icons.delete, color: theme.colorScheme.error),
+                title: Text('Delete', style: TextStyle(color: theme.colorScheme.error)),
+                onTap: () async {
+                  Navigator.pop(ctx);
+                  await ref.read(libraryRepositoryProvider).deleteSong(song.videoId);
+                  ref.invalidate(libraryProvider);
+                },
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 

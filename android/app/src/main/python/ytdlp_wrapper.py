@@ -7,7 +7,8 @@ def fetch_video_metadata(video_id):
         'quiet': True,
         'no_warnings': True,
         'extract_flat': True,
-        'skip_download': True
+        'skip_download': True,
+        'extractor_args': {'youtube': ['player_client=android,web']}
     }
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
@@ -24,7 +25,8 @@ def fetch_playlist_videos(playlist_url):
         'quiet': True,
         'no_warnings': True,
         'extract_flat': True,
-        'skip_download': True
+        'skip_download': True,
+        'extractor_args': {'youtube': ['player_client=android,web']}
     }
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(playlist_url, download=False)
@@ -47,6 +49,7 @@ def download_audio_full(video_id, output_dir, safe_filename):
         'quiet': True,
         'no_warnings': True,
         'noprogress': True,
+        'extractor_args': {'youtube': ['player_client=android,web']}
     }
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=True)

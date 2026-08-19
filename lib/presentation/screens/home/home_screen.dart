@@ -280,9 +280,12 @@ class HomeScreen extends ConsumerWidget {
                           itemBuilder: (context, index) {
                             final song = songs[index];
                             return GestureDetector(
-                              onTap: () => ref
-                                  .read(playerProvider.notifier)
-                                  .playQueue(songs.take(10).toList(), index),
+                              onTap: () {
+                                ref
+                                    .read(playerProvider.notifier)
+                                    .playQueue(songs.take(10).toList(), index);
+                                context.push('/now-playing');
+                              },
                               child: Container(
                                 decoration: BoxDecoration(
                                   borderRadius: BorderRadius.circular(16),

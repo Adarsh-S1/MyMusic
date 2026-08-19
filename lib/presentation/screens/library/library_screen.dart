@@ -240,6 +240,7 @@ class _SongsTab extends ConsumerWidget {
                 ),
                 onTap: () {
                   ref.read(playerProvider.notifier).playQueue(songs, index);
+                  context.push('/now-playing');
                 },
               ),
             );

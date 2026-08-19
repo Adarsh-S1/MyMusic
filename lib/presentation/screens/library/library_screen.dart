@@ -28,6 +28,13 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
   }
 
   @override
+  void deactivate() {
+    // Dismiss any open popup menus when navigating away from this screen
+    Navigator.of(context).popUntil((route) => route is! PopupRoute);
+    super.deactivate();
+  }
+
+  @override
   void dispose() {
     _tabController.dispose();
     _searchController.dispose();

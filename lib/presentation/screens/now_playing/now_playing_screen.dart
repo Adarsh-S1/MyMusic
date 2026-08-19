@@ -73,11 +73,13 @@ class NowPlayingScreen extends ConsumerWidget {
                   SnackBar(content: Text('Deleted "${song.title}"')),
                 );
 
-                ref
-                    .read(playerProvider.notifier)
-                    .removeFromQueue(player.currentIndex);
-                if (ref.read(playerProvider).queue.isEmpty) {
+                if (player.queue.length <= 1) {
+                  ref.read(playerProvider.notifier).stop();
                   Navigator.pop(context);
+                } else {
+                  ref
+                      .read(playerProvider.notifier)
+                      .removeFromQueue(player.currentIndex);
                 }
               }
             },

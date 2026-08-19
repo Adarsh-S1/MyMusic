@@ -25,13 +25,13 @@ class PlaylistDetailScreen extends ConsumerWidget {
         title: Text(playlistName),
         actions: [
           IconButton(
-            iconSize: 40,
+            //iconSize: 40,
             icon: const Icon(Icons.add),
             onPressed: () => _showAddSongsDialog(context, ref),
             tooltip: 'Add Songs',
           ),
           IconButton(
-            iconSize: 36,
+            //iconSize: 36,
             icon: const Icon(Icons.delete_outline),
             onPressed: () => _confirmDeletePlaylist(context, ref),
             tooltip: 'Delete Playlist',
@@ -154,9 +154,12 @@ class PlaylistDetailScreen extends ConsumerWidget {
               const SizedBox(height: 16),
               CheckboxListTile(
                 value: deleteSongs,
-                onChanged: (value) => setState(() => deleteSongs = value ?? false),
+                onChanged: (value) =>
+                    setState(() => deleteSongs = value ?? false),
                 title: const Text('Also delete all songs permanently'),
-                subtitle: const Text('This will remove the audio files from your device'),
+                subtitle: const Text(
+                  'This will remove the audio files from your device',
+                ),
                 contentPadding: EdgeInsets.zero,
                 controlAffinity: ListTileControlAffinity.leading,
                 dense: true,

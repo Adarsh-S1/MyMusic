@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -15,11 +16,22 @@ class DownloaderScreen extends ConsumerStatefulWidget {
 
 class _DownloaderScreenState extends ConsumerState<DownloaderScreen> {
   final _urlController = TextEditingController();
+  Timer? _debounce;
 
   @override
   void dispose() {
     _urlController.dispose();
+    _debounce?.cancel();
     super.dispose();
+  }
+
+  void _onUrlInput(String url) {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 500), () {
+      if (mounted) {
+        ref.read(downloadFormProvider.notifier).onUrlChanged(url);
+      }
+    });
   }
 
   Future<void> _pasteFromClipboard() async {
@@ -81,9 +93,7 @@ class _DownloaderScreenState extends ConsumerState<DownloaderScreen> {
                       ),
                       filled: true,
                     ),
-                    onChanged: (url) {
-                      ref.read(downloadFormProvider.notifier).onUrlChanged(url);
-                    },
+                    onChanged: _onUrlInput,
                   ),
                   const SizedBox(height: 12),
 

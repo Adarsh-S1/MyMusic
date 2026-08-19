@@ -47,6 +47,39 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     }
   }
 
+  bool? _streamStatus;
+  bool _isCheckingStream = false;
+  String? _streamError;
+
+  Future<void> _checkStream() async {
+    setState(() {
+      _isCheckingStream = true;
+      _streamStatus = null;
+      _streamError = null;
+    });
+
+    try {
+      final datasource = ref.read(chaquopyDatasourceProvider);
+      final result = await datasource.checkStreamUrl('dQw4w9WgXcQ');
+      final url = result['url'] as String? ?? '';
+
+      if (url.isNotEmpty) {
+        setState(() {
+          _streamStatus = true;
+          _isCheckingStream = false;
+        });
+      } else {
+        throw Exception('Stream URL not found');
+      }
+    } catch (e) {
+      setState(() {
+        _streamStatus = false;
+        _isCheckingStream = false;
+        _streamError = e.toString();
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -112,7 +145,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   ? theme.colorScheme.error
                   : null,
             ),
-            title: const Text('yt-dlp Checker'),
+            title: const Text('Metadata Checker'),
             subtitle: Text(
               _isChecking
                   ? 'Checking...'
@@ -132,6 +165,47 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   )
                 : const Icon(Icons.play_arrow),
             onTap: _isChecking ? null : _checkYtdlp,
+          ),
+          const Divider(),
+
+          // Stream URL Checker
+          ListTile(
+            leading: Icon(
+              _isCheckingStream
+                  ? Icons.hourglass_top
+                  : _streamStatus == true
+                  ? Icons.check_circle
+                  : _streamStatus == false
+                  ? Icons.error
+                  : Icons.build_circle_outlined,
+              color: _isCheckingStream
+                  ? theme.colorScheme.onSurfaceVariant
+                  : _streamStatus == true
+                  ? Colors.green
+                  : _streamStatus == false
+                  ? theme.colorScheme.error
+                  : null,
+            ),
+            title: const Text('Stream URL Checker'),
+            subtitle: Text(
+              _isCheckingStream
+                  ? 'Extracting stream...'
+                  : _streamStatus == true
+                  ? 'Stream extraction working correctly'
+                  : _streamStatus == false
+                  ? _streamError ?? 'Stream extraction failed'
+                  : 'Tap to verify stream extraction',
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+            trailing: _isCheckingStream
+                ? const SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.play_arrow),
+            onTap: _isCheckingStream ? null : _checkStream,
           ),
           const Divider(),
 
@@ -159,6 +233,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     );
   }
 
+  // ignore: unused_element
   void _showQualityDialog(BuildContext context) {
     showDialog(
       context: context,
@@ -176,6 +251,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     );
   }
 
+  // ignore: unused_element
   void _showThemeDialog(BuildContext context) {
     showDialog(
       context: context,

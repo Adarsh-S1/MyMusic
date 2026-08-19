@@ -63,3 +63,17 @@ def download_audio_full(video_id, output_dir, safe_filename):
                 "thumbnail": info.get("thumbnail", "")
             }
         })
+
+def check_stream_url(video_id):
+    ydl_opts = {
+        'quiet': True,
+        'no_warnings': True,
+        'extract_flat': False,
+        'skip_download': True,
+        'extractor_args': {'youtube': ['player_client=android,web']}
+    }
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(f"https://www.youtube.com/watch?v={video_id}", download=False)
+        return json.dumps({
+            "url": info.get("url", "") or next((f.get("url") for f in info.get("formats", []) if f.get("url")), "")
+        })

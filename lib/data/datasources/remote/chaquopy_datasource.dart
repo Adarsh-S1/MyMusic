@@ -60,5 +60,11 @@ class ChaquopyDatasource {
     return Map<String, dynamic>.from(json.decode(jsonStr));
   }
 
+  /// Check stream URL extraction without downloading.
+  Future<Map<String, dynamic>> checkStreamUrl(String videoId) async {
+    final jsonStr = await _callPython('check_stream_url', [videoId]);
+    return Map<String, dynamic>.from(json.decode(jsonStr));
+  }
+
   void dispose() {}
 }

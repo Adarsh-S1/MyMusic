@@ -3,9 +3,13 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:mymusic/core/extensions/extensions.dart';
 import 'package:mymusic/domain/entities/song.dart';
 import 'package:mymusic/presentation/providers/providers.dart';
+import 'package:mymusic/presentation/widgets/song_thumbnail.dart';
+
+import 'widgets/now_playing_controls.dart';
+import 'widgets/now_playing_slider.dart';
+import 'widgets/queue_bottom_sheet.dart';
 
 class NowPlayingScreen extends ConsumerStatefulWidget {
   const NowPlayingScreen({super.key});
@@ -71,7 +75,7 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
           ),
           IconButton(
             icon: const Icon(Icons.queue_music),
-            onPressed: () => _showQueueSheet(context, ref, player),
+            onPressed: () => showQueueSheet(context),
           ),
           IconButton(
             icon: const Icon(Icons.delete),
@@ -112,8 +116,8 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 32),
               child: isLandscape
-                  ? _buildLandscapeLayout(song, hasThumbnail, player, theme)
-                  : _buildPortraitLayout(song, hasThumbnail, player, theme),
+                  ? _buildLandscapeLayout(song, player, theme)
+                  : _buildPortraitLayout(song, player, theme),
             ),
           ),
         ],
@@ -164,34 +168,20 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
     }
   }
 
-  Widget _buildAlbumArt(Song song, bool hasThumbnail, ThemeData theme, {double size = 280}) {
-    return Container(
+  Widget _buildAlbumArt(Song song, {double size = 280}) {
+    return SongThumbnail(
+      thumbnailPath: song.localThumbnailPath,
       width: size,
       height: size,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.3),
-            blurRadius: 30,
-            offset: const Offset(0, 10),
-          ),
-        ],
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: hasThumbnail
-          ? Image.file(
-              File(song.localThumbnailPath),
-              fit: BoxFit.cover,
-            )
-          : Container(
-              color: theme.colorScheme.primaryContainer,
-              child: Icon(
-                Icons.music_note,
-                size: size * 0.4,
-                color: theme.colorScheme.primary,
-              ),
-            ),
+      borderRadius: 24,
+      iconSize: size * 0.4,
+      boxShadow: [
+        BoxShadow(
+          color: Colors.black.withValues(alpha: 0.3),
+          blurRadius: 30,
+          offset: const Offset(0, 10),
+        ),
+      ],
     );
   }
 
@@ -220,145 +210,23 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
     );
   }
 
-  Widget _buildSlider(PlayerState player, ThemeData theme) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        SliderTheme(
-          data: SliderThemeData(
-            trackHeight: 4,
-            thumbShape: const RoundSliderThumbShape(
-              enabledThumbRadius: 6,
-            ),
-            overlayShape: const RoundSliderOverlayShape(
-              overlayRadius: 14,
-            ),
-            activeTrackColor: theme.colorScheme.primary,
-            inactiveTrackColor: Colors.white24,
-            thumbColor: theme.colorScheme.primary,
-          ),
-          child: Slider(
-            value: player.position.inMilliseconds.toDouble().clamp(
-              0,
-              player.duration.inMilliseconds.toDouble().clamp(1, double.infinity),
-            ),
-            max: player.duration.inMilliseconds.toDouble().clamp(1, double.infinity),
-            onChanged: (v) => ref
-                .read(playerProvider.notifier)
-                .seek(Duration(milliseconds: v.toInt())),
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 4),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                player.position.toHumanString(),
-                style: const TextStyle(
-                  color: Colors.white70,
-                  fontSize: 12,
-                ),
-              ),
-              Text(
-                player.duration.toHumanString(),
-                style: const TextStyle(
-                  color: Colors.white70,
-                  fontSize: 12,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildTransportControls(PlayerState player, ThemeData theme, {bool isLandscape = false}) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-      children: [
-        IconButton(
-          icon: Icon(
-            Icons.shuffle,
-            color: player.isShuffled ? theme.colorScheme.primary : Colors.white70,
-          ),
-          onPressed: () => ref.read(playerProvider.notifier).toggleShuffle(),
-        ),
-        if (isLandscape)
-          IconButton(
-            icon: const Icon(Icons.replay_10, color: Colors.white70),
-            onPressed: () {
-              final newPos = player.position - const Duration(seconds: 10);
-              ref.read(playerProvider.notifier).seek(newPos < Duration.zero ? Duration.zero : newPos);
-            },
-          ),
-        IconButton(
-          icon: const Icon(
-            Icons.skip_previous,
-            color: Colors.white,
-            size: 36,
-          ),
-          onPressed: () => ref.read(playerProvider.notifier).previous(),
-        ),
-        Container(
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: theme.colorScheme.primary,
-          ),
-          child: IconButton(
-            iconSize: 40,
-            icon: Icon(
-              player.isPlaying ? Icons.pause : Icons.play_arrow,
-              color: Colors.white,
-            ),
-            onPressed: () => ref.read(playerProvider.notifier).togglePlayPause(),
-          ),
-        ),
-        IconButton(
-          icon: const Icon(
-            Icons.skip_next,
-            color: Colors.white,
-            size: 36,
-          ),
-          onPressed: () => ref.read(playerProvider.notifier).next(),
-        ),
-        if (isLandscape)
-          IconButton(
-            icon: const Icon(Icons.forward_30, color: Colors.white70),
-            onPressed: () {
-              final newPos = player.position + const Duration(seconds: 30);
-              ref.read(playerProvider.notifier).seek(newPos > player.duration ? player.duration : newPos);
-            },
-          ),
-        IconButton(
-          icon: Icon(
-            player.repeatMode == SongRepeatMode.one ? Icons.repeat_one : Icons.repeat,
-            color: player.repeatMode != SongRepeatMode.off ? theme.colorScheme.primary : Colors.white70,
-          ),
-          onPressed: () => ref.read(playerProvider.notifier).cycleRepeatMode(),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildPortraitLayout(Song song, bool hasThumbnail, PlayerState player, ThemeData theme) {
+  Widget _buildPortraitLayout(Song song, PlayerState player, ThemeData theme) {
     return Column(
       children: [
         const Spacer(flex: 1),
-        _buildAlbumArt(song, hasThumbnail, theme, size: 280),
+        _buildAlbumArt(song, size: 280),
         const Spacer(flex: 1),
         _buildSongInfo(song, theme),
         const SizedBox(height: 32),
-        _buildSlider(player, theme),
+        NowPlayingSlider(player: player, theme: theme),
         const SizedBox(height: 16),
-        _buildTransportControls(player, theme, isLandscape: false),
+        NowPlayingControls(player: player, theme: theme, isLandscape: false),
         const Spacer(flex: 1),
       ],
     );
   }
 
-  Widget _buildLandscapeLayout(Song song, bool hasThumbnail, PlayerState player, ThemeData theme) {
+  Widget _buildLandscapeLayout(Song song, PlayerState player, ThemeData theme) {
     return Column(
       children: [
         Expanded(
@@ -366,7 +234,7 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
             children: [
               Expanded(
                 child: Center(
-                  child: _buildAlbumArt(song, hasThumbnail, theme, size: 200),
+                  child: _buildAlbumArt(song, size: 200),
                 ),
               ),
               const SizedBox(width: 32),
@@ -376,106 +244,16 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
                   children: [
                     _buildSongInfo(song, theme),
                     const SizedBox(height: 16),
-                    _buildTransportControls(player, theme, isLandscape: true),
+                    NowPlayingControls(player: player, theme: theme, isLandscape: true),
                   ],
                 ),
               ),
             ],
           ),
         ),
-        _buildSlider(player, theme),
+        NowPlayingSlider(player: player, theme: theme),
         const SizedBox(height: 16),
       ],
-    );
-  }
-
-  void _showQueueSheet(
-    BuildContext context,
-    WidgetRef ref,
-    PlayerState player,
-  ) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (ctx) => DraggableScrollableSheet(
-        initialChildSize: 0.5,
-        maxChildSize: 0.9,
-        minChildSize: 0.3,
-        expand: false,
-        builder: (context, scrollController) {
-          return Consumer(
-            builder: (context, ref, child) {
-              final player = ref.watch(playerProvider);
-              return Column(
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          'Up Next',
-                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        Text(
-                          '${player.queue.length} songs',
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
-                      ],
-                    ),
-                  ),
-                  Expanded(
-                    child: ListView.builder(
-                      controller: scrollController,
-                      itemCount: player.queue.length,
-                      itemBuilder: (context, index) {
-                        final song = player.queue[index];
-                        final isCurrent = index == player.currentIndex;
-                        return ListTile(
-                          leading: isCurrent
-                              ? Icon(
-                                  Icons.play_arrow,
-                                  color: Theme.of(context).colorScheme.primary,
-                                )
-                              : Text(
-                                  '${index + 1}',
-                                  style: Theme.of(context).textTheme.bodySmall,
-                                ),
-                          title: Text(
-                            song.title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontWeight: isCurrent
-                                  ? FontWeight.bold
-                                  : FontWeight.normal,
-                            ),
-                          ),
-                          subtitle: Text(song.artist ?? 'Unknown', maxLines: 1),
-                          trailing: IconButton(
-                            icon: const Icon(Icons.remove_circle_outline, size: 20),
-                            onPressed: () => ref
-                                .read(playerProvider.notifier)
-                                .removeFromQueue(index),
-                          ),
-                          onTap: () => ref
-                              .read(playerProvider.notifier)
-                              .playQueue(player.queue, index),
-                        );
-                      },
-                    ),
-                  ),
-                ],
-              );
-            },
-          );
-        },
-      ),
     );
   }
 }

@@ -1,15 +1,48 @@
 import 'dart:io';
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:mymusic/core/extensions/extensions.dart';
+import 'package:mymusic/domain/entities/song.dart';
 import 'package:mymusic/presentation/providers/providers.dart';
+import 'package:mymusic/presentation/widgets/song_thumbnail.dart';
 
-class NowPlayingScreen extends ConsumerWidget {
+import 'widgets/now_playing_controls.dart';
+import 'widgets/now_playing_slider.dart';
+import 'widgets/queue_bottom_sheet.dart';
+
+class NowPlayingScreen extends ConsumerStatefulWidget {
   const NowPlayingScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<NowPlayingScreen> createState() => _NowPlayingScreenState();
+}
+
+class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
+  bool _isLandscape = false;
+
+  @override
+  void dispose() {
+    SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+    super.dispose();
+  }
+
+  void _toggleOrientation() {
+    setState(() {
+      _isLandscape = !_isLandscape;
+      if (_isLandscape) {
+        SystemChrome.setPreferredOrientations([
+          DeviceOrientation.landscapeLeft,
+          DeviceOrientation.landscapeRight,
+        ]);
+      } else {
+        SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final player = ref.watch(playerProvider);
     final theme = Theme.of(context);
     final song = player.currentSong;
@@ -22,6 +55,8 @@ class NowPlayingScreen extends ConsumerWidget {
     }
 
     final hasThumbnail = File(song.localThumbnailPath).existsSync();
+    final isLandscape =
+        MediaQuery.of(context).orientation == Orientation.landscape;
 
     return Scaffold(
       extendBodyBehindAppBar: true,
@@ -34,55 +69,16 @@ class NowPlayingScreen extends ConsumerWidget {
         ),
         actions: [
           IconButton(
+            icon: Icon(Icons.screen_rotation),
+            onPressed: _toggleOrientation,
+          ),
+          IconButton(
             icon: const Icon(Icons.queue_music),
-            onPressed: () => _showQueueSheet(context, ref, player),
+            onPressed: () => showQueueSheet(context),
           ),
           IconButton(
             icon: const Icon(Icons.delete),
-            onPressed: () async {
-              final shouldDelete = await showDialog<bool>(
-                context: context,
-                builder: (ctx) => AlertDialog(
-                  title: const Text('Delete Song'),
-                  content: Text(
-                    'Delete "${song.title}"? This will also remove the file.',
-                  ),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(ctx, false),
-                      child: const Text('Cancel'),
-                    ),
-                    TextButton(
-                      onPressed: () => Navigator.pop(ctx, true),
-                      child: Text(
-                        'Delete',
-                        style: TextStyle(color: theme.colorScheme.error),
-                      ),
-                    ),
-                  ],
-                ),
-              );
-
-              if (shouldDelete == true && context.mounted) {
-                await ref
-                    .read(libraryRepositoryProvider)
-                    .deleteSong(song.videoId);
-                ref.invalidate(libraryProvider);
-
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Deleted "${song.title}"')),
-                );
-
-                if (player.queue.length <= 1) {
-                  ref.read(playerProvider.notifier).stop();
-                  Navigator.pop(context);
-                } else {
-                  ref
-                      .read(playerProvider.notifier)
-                      .removeFromQueue(player.currentIndex);
-                }
-              }
-            },
+            onPressed: () => _deleteSong(context, song, player, theme),
           ),
         ],
       ),
@@ -118,181 +114,9 @@ class NowPlayingScreen extends ConsumerWidget {
           SafeArea(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 32),
-              child: Column(
-                children: [
-                  const Spacer(flex: 1),
-
-                  // Album Art
-                  Container(
-                    width: 280,
-                    height: 280,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(24),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.3),
-                          blurRadius: 30,
-                          offset: const Offset(0, 10),
-                        ),
-                      ],
-                    ),
-                    clipBehavior: Clip.antiAlias,
-                    child: hasThumbnail
-                        ? Image.file(
-                            File(song.localThumbnailPath),
-                            fit: BoxFit.cover,
-                          )
-                        : Container(
-                            color: theme.colorScheme.primaryContainer,
-                            child: Icon(
-                              Icons.music_note,
-                              size: 100,
-                              color: theme.colorScheme.primary,
-                            ),
-                          ),
-                  ),
-                  const Spacer(flex: 1),
-
-                  // Song Info
-                  Text(
-                    song.title,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    textAlign: TextAlign.center,
-                    style: theme.textTheme.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    song.artist ?? 'Unknown Artist',
-                    style: theme.textTheme.bodyLarge?.copyWith(
-                      color: Colors.white70,
-                    ),
-                  ),
-                  const SizedBox(height: 32),
-
-                  // Seek Slider
-                  SliderTheme(
-                    data: SliderThemeData(
-                      trackHeight: 4,
-                      thumbShape: const RoundSliderThumbShape(
-                        enabledThumbRadius: 6,
-                      ),
-                      overlayShape: const RoundSliderOverlayShape(
-                        overlayRadius: 14,
-                      ),
-                      activeTrackColor: theme.colorScheme.primary,
-                      inactiveTrackColor: Colors.white24,
-                      thumbColor: theme.colorScheme.primary,
-                    ),
-                    child: Slider(
-                      value: player.position.inMilliseconds.toDouble().clamp(
-                        0,
-                        player.duration.inMilliseconds.toDouble().clamp(
-                          1,
-                          double.infinity,
-                        ),
-                      ),
-                      max: player.duration.inMilliseconds.toDouble().clamp(
-                        1,
-                        double.infinity,
-                      ),
-                      onChanged: (v) => ref
-                          .read(playerProvider.notifier)
-                          .seek(Duration(milliseconds: v.toInt())),
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 4),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          player.position.toHumanString(),
-                          style: const TextStyle(
-                            color: Colors.white70,
-                            fontSize: 12,
-                          ),
-                        ),
-                        Text(
-                          player.duration.toHumanString(),
-                          style: const TextStyle(
-                            color: Colors.white70,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-
-                  // Transport Controls
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: [
-                      IconButton(
-                        icon: Icon(
-                          Icons.shuffle,
-                          color: player.isShuffled
-                              ? theme.colorScheme.primary
-                              : Colors.white70,
-                        ),
-                        onPressed: () =>
-                            ref.read(playerProvider.notifier).toggleShuffle(),
-                      ),
-                      IconButton(
-                        icon: const Icon(
-                          Icons.skip_previous,
-                          color: Colors.white,
-                          size: 36,
-                        ),
-                        onPressed: () =>
-                            ref.read(playerProvider.notifier).previous(),
-                      ),
-                      Container(
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: theme.colorScheme.primary,
-                        ),
-                        child: IconButton(
-                          iconSize: 40,
-                          icon: Icon(
-                            player.isPlaying ? Icons.pause : Icons.play_arrow,
-                            color: Colors.white,
-                          ),
-                          onPressed: () => ref
-                              .read(playerProvider.notifier)
-                              .togglePlayPause(),
-                        ),
-                      ),
-                      IconButton(
-                        icon: const Icon(
-                          Icons.skip_next,
-                          color: Colors.white,
-                          size: 36,
-                        ),
-                        onPressed: () =>
-                            ref.read(playerProvider.notifier).next(),
-                      ),
-                      IconButton(
-                        icon: Icon(
-                          player.repeatMode == SongRepeatMode.one
-                              ? Icons.repeat_one
-                              : Icons.repeat,
-                          color: player.repeatMode != SongRepeatMode.off
-                              ? theme.colorScheme.primary
-                              : Colors.white70,
-                        ),
-                        onPressed: () =>
-                            ref.read(playerProvider.notifier).cycleRepeatMode(),
-                      ),
-                    ],
-                  ),
-                  const Spacer(flex: 1),
-                ],
-              ),
+              child: isLandscape
+                  ? _buildLandscapeLayout(song, player, theme)
+                  : _buildPortraitLayout(song, player, theme),
             ),
           ),
         ],
@@ -300,93 +124,138 @@ class NowPlayingScreen extends ConsumerWidget {
     );
   }
 
-  void _showQueueSheet(
+  Future<void> _deleteSong(
     BuildContext context,
-    WidgetRef ref,
+    Song song,
     PlayerState player,
-  ) {
-    showModalBottomSheet(
+    ThemeData theme,
+  ) async {
+    final shouldDelete = await showDialog<bool>(
       context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete Song'),
+        content: Text(
+          'Delete "${song.title}"? This will also remove the file.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(
+              'Delete',
+              style: TextStyle(color: theme.colorScheme.error),
+            ),
+          ),
+        ],
       ),
-      builder: (ctx) => DraggableScrollableSheet(
-        initialChildSize: 0.5,
-        maxChildSize: 0.9,
-        minChildSize: 0.3,
-        expand: false,
-        builder: (context, scrollController) {
-          return Consumer(
-            builder: (context, ref, child) {
-              final player = ref.watch(playerProvider);
-              return Column(
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          'Up Next',
-                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        Text(
-                          '${player.queue.length} songs',
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
-                      ],
+    );
+
+    if (shouldDelete == true) {
+      await ref.read(libraryRepositoryProvider).deleteSong(song.videoId);
+      ref.invalidate(libraryProvider);
+
+      if (!context.mounted) return;
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Deleted "${song.title}"')));
+
+      if (player.queue.length <= 1) {
+        ref.read(playerProvider.notifier).stop();
+        Navigator.pop(context);
+      } else {
+        ref.read(playerProvider.notifier).removeFromQueue(player.currentIndex);
+      }
+    }
+  }
+
+  Widget _buildAlbumArt(Song song, {double size = 280}) {
+    return SongThumbnail(
+      thumbnailPath: song.localThumbnailPath,
+      width: size,
+      height: size,
+      borderRadius: 24,
+      iconSize: size * 0.4,
+      boxShadow: [
+        BoxShadow(
+          color: Colors.black.withValues(alpha: 0.3),
+          blurRadius: 30,
+          offset: const Offset(0, 10),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSongInfo(Song song, ThemeData theme) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          song.title,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          textAlign: TextAlign.center,
+          style: theme.textTheme.headlineSmall?.copyWith(
+            fontWeight: FontWeight.bold,
+            color: Colors.white,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          song.artist ?? 'Unknown Artist',
+          style: theme.textTheme.bodyLarge?.copyWith(color: Colors.white70),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPortraitLayout(Song song, PlayerState player, ThemeData theme) {
+    return Column(
+      children: [
+        const Spacer(flex: 1),
+        _buildAlbumArt(song, size: 280),
+        const Spacer(flex: 1),
+        _buildSongInfo(song, theme),
+        const SizedBox(height: 32),
+        NowPlayingSlider(player: player, theme: theme),
+        const SizedBox(height: 16),
+        NowPlayingControls(player: player, theme: theme, isLandscape: false),
+        const Spacer(flex: 1),
+      ],
+    );
+  }
+
+  Widget _buildLandscapeLayout(Song song, PlayerState player, ThemeData theme) {
+    return Column(
+      children: [
+        Expanded(
+          child: Row(
+            children: [
+              Center(child: _buildAlbumArt(song, size: 200)),
+              const SizedBox(width: 5),
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    _buildSongInfo(song, theme),
+                    const SizedBox(height: 16),
+                    NowPlayingControls(
+                      player: player,
+                      theme: theme,
+                      isLandscape: true,
                     ),
-                  ),
-                  Expanded(
-                    child: ListView.builder(
-                      controller: scrollController,
-                      itemCount: player.queue.length,
-                      itemBuilder: (context, index) {
-                        final song = player.queue[index];
-                        final isCurrent = index == player.currentIndex;
-                        return ListTile(
-                          leading: isCurrent
-                              ? Icon(
-                                  Icons.play_arrow,
-                                  color: Theme.of(context).colorScheme.primary,
-                                )
-                              : Text(
-                                  '${index + 1}',
-                                  style: Theme.of(context).textTheme.bodySmall,
-                                ),
-                          title: Text(
-                            song.title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontWeight: isCurrent
-                                  ? FontWeight.bold
-                                  : FontWeight.normal,
-                            ),
-                          ),
-                          subtitle: Text(song.artist ?? 'Unknown', maxLines: 1),
-                          trailing: IconButton(
-                            icon: const Icon(Icons.remove_circle_outline, size: 20),
-                            onPressed: () => ref
-                                .read(playerProvider.notifier)
-                                .removeFromQueue(index),
-                          ),
-                          onTap: () => ref
-                              .read(playerProvider.notifier)
-                              .playQueue(player.queue, index),
-                        );
-                      },
-                    ),
-                  ),
-                ],
-              );
-            },
-          );
-        },
-      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        NowPlayingSlider(player: player, theme: theme),
+        const SizedBox(height: 16),
+      ],
     );
   }
 }

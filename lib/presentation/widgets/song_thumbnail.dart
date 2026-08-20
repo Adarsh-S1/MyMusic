@@ -9,6 +9,7 @@ class SongThumbnail extends StatelessWidget {
   final double height;
   final double borderRadius;
   final double iconSize;
+  final List<BoxShadow>? boxShadow;
 
   const SongThumbnail({
     super.key,
@@ -17,6 +18,7 @@ class SongThumbnail extends StatelessWidget {
     this.height = 48,
     this.borderRadius = 8,
     this.iconSize = 24,
+    this.boxShadow,
   });
 
   @override
@@ -31,6 +33,7 @@ class SongThumbnail extends StatelessWidget {
       decoration: BoxDecoration(
         color: theme.colorScheme.primaryContainer,
         borderRadius: BorderRadius.circular(borderRadius),
+        boxShadow: boxShadow,
       ),
       clipBehavior: Clip.antiAlias,
       child: exists

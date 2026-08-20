@@ -41,8 +41,6 @@ dependencies:
   just_audio: ^0.9.39
   audio_service: ^0.18.15
 
-  # Audio Conversion (replaces discontinued ffmpeg_kit)
-  flutter_audio_toolkit: ^0.1.0
 
   # Database
   isar: ^3.1.0+1

@@ -36,9 +36,7 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
           DeviceOrientation.landscapeRight,
         ]);
       } else {
-        SystemChrome.setPreferredOrientations([
-          DeviceOrientation.portraitUp,
-        ]);
+        SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
       }
     });
   }
@@ -57,7 +55,8 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
     }
 
     final hasThumbnail = File(song.localThumbnailPath).existsSync();
-    final isLandscape = MediaQuery.of(context).orientation == Orientation.landscape;
+    final isLandscape =
+        MediaQuery.of(context).orientation == Orientation.landscape;
 
     return Scaffold(
       extendBodyBehindAppBar: true,
@@ -70,7 +69,7 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
         ),
         actions: [
           IconButton(
-            icon: Icon(isLandscape ? Icons.screen_lock_portrait : Icons.screen_rotation),
+            icon: Icon(Icons.screen_rotation),
             onPressed: _toggleOrientation,
           ),
           IconButton(
@@ -125,7 +124,12 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
     );
   }
 
-  Future<void> _deleteSong(BuildContext context, Song song, PlayerState player, ThemeData theme) async {
+  Future<void> _deleteSong(
+    BuildContext context,
+    Song song,
+    PlayerState player,
+    ThemeData theme,
+  ) async {
     final shouldDelete = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -155,9 +159,9 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
 
       if (!context.mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Deleted "${song.title}"')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Deleted "${song.title}"')));
 
       if (player.queue.length <= 1) {
         ref.read(playerProvider.notifier).stop();
@@ -202,9 +206,7 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
         const SizedBox(height: 8),
         Text(
           song.artist ?? 'Unknown Artist',
-          style: theme.textTheme.bodyLarge?.copyWith(
-            color: Colors.white70,
-          ),
+          style: theme.textTheme.bodyLarge?.copyWith(color: Colors.white70),
         ),
       ],
     );
@@ -232,19 +234,19 @@ class _NowPlayingScreenState extends ConsumerState<NowPlayingScreen> {
         Expanded(
           child: Row(
             children: [
-              Expanded(
-                child: Center(
-                  child: _buildAlbumArt(song, size: 200),
-                ),
-              ),
-              const SizedBox(width: 32),
+              Center(child: _buildAlbumArt(song, size: 200)),
+              const SizedBox(width: 5),
               Expanded(
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     _buildSongInfo(song, theme),
                     const SizedBox(height: 16),
-                    NowPlayingControls(player: player, theme: theme, isLandscape: true),
+                    NowPlayingControls(
+                      player: player,
+                      theme: theme,
+                      isLandscape: true,
+                    ),
                   ],
                 ),
               ),

@@ -16,7 +16,6 @@ import 'package:mymusic/domain/repositories/i_downloader_repository.dart';
 /// Downloader implementation powered entirely by yt-dlp (via Chaquopy).
 ///
 /// yt-dlp handles metadata extraction, stream selection, and audio download.
-/// No separate youtube_explode dependency needed.
 class DownloaderRepositoryImpl implements IDownloaderRepository {
   final ChaquopyDatasource _chaquopyDatasource;
   final SongDao _songDao;
@@ -49,7 +48,8 @@ class DownloaderRepositoryImpl implements IDownloaderRepository {
       title: data['title'] as String? ?? 'Unknown Title',
       author: data['author'] as String? ?? 'Unknown Artist',
       duration: Duration(seconds: (data['duration'] as num?)?.toInt() ?? 0),
-      thumbnailUrl: data['thumbnail'] as String? ??
+      thumbnailUrl:
+          data['thumbnail'] as String? ??
           'https://i.ytimg.com/vi/$videoId/hqdefault.jpg',
     );
   }
@@ -66,13 +66,16 @@ class DownloaderRepositoryImpl implements IDownloaderRepository {
     for (final entry in rawEntries) {
       if (entry['video_id'] == null) continue;
       final durationSecs = entry['duration'] as int? ?? 0;
-      videos.add(VideoMetadata(
-        videoId: entry['video_id'],
-        title: entry['title'] ?? 'Unknown Title',
-        author: 'Unknown Artist',
-        duration: Duration(seconds: durationSecs),
-        thumbnailUrl: 'https://i.ytimg.com/vi/${entry['video_id']}/hqdefault.jpg',
-      ));
+      videos.add(
+        VideoMetadata(
+          videoId: entry['video_id'],
+          title: entry['title'] ?? 'Unknown Title',
+          author: 'Unknown Artist',
+          duration: Duration(seconds: durationSecs),
+          thumbnailUrl:
+              'https://i.ytimg.com/vi/${entry['video_id']}/hqdefault.jpg',
+        ),
+      );
     }
 
     return PlaylistMetadata(
@@ -87,7 +90,7 @@ class DownloaderRepositoryImpl implements IDownloaderRepository {
   Stream<DownloadTask> downloadAudioDirect({
     required String videoId,
     required String title,
-    String? playlistName,
+    // String? playlistName,
   }) async* {
     final taskId = DateTime.now().microsecondsSinceEpoch.toString();
 
@@ -104,19 +107,18 @@ class DownloaderRepositoryImpl implements IDownloaderRepository {
 
     try {
       // Get storage directories
-      String musicPath = AppConstants.baseMusicDir;
-      String thumbPath = AppConstants.baseThumbnailDir;
+      // String musicPath = AppConstants.baseMusicDir;
+      // String thumbPath = AppConstants.baseThumbnailDir;
 
-      if (playlistName != null && playlistName.isNotEmpty) {
-        final safePlaylistName = playlistName.toSafeFilename();
-        musicPath = '$musicPath/$safePlaylistName';
-        thumbPath = '$thumbPath/$safePlaylistName';
-      }
+      // if (playlistName != null && playlistName.isNotEmpty) {
+      //   final safePlaylistName = playlistName.toSafeFilename();
+      //   musicPath = '$musicPath/$safePlaylistName';
+      //   thumbPath = '$thumbPath/$safePlaylistName';
+      // }
 
-      final musicDir = Directory(musicPath);
-      final thumbDir = Directory(thumbPath);
-      await musicDir.create(recursive: true);
-      await thumbDir.create(recursive: true);
+      final musicDir = await AppConstants.getPublicMusicDir();
+      final thumbDir = await AppConstants.getPublicThumbnailDir();
+      // thumbDir : '/storage/emulated/0/Pictures/YT-Groove'
 
       final safeTitle = title.toSafeFilename();
       final thumbnailPath = '${thumbDir.path}/$videoId.jpg';
@@ -137,7 +139,8 @@ class DownloaderRepositoryImpl implements IDownloaderRepository {
       final metadata = result['metadata'] as Map<String, dynamic>? ?? {};
       final author = metadata['author'] as String? ?? 'Unknown Artist';
       final durationSecs = (metadata['duration'] as num?)?.toInt() ?? 0;
-      final thumbUrl = metadata['thumbnail'] as String? ??
+      final thumbUrl =
+          metadata['thumbnail'] as String? ??
           'https://i.ytimg.com/vi/$videoId/hqdefault.jpg';
 
       yield task.copyWith(progress: 1.0);
@@ -189,7 +192,9 @@ class DownloaderRepositoryImpl implements IDownloaderRepository {
   }
 
   @override
-  Future<(String, List<PlaylistEntry>)> fetchPlaylistVideos(String playlistUrl) async {
+  Future<(String, List<PlaylistEntry>)> fetchPlaylistVideos(
+    String playlistUrl,
+  ) async {
     final result = await _chaquopyDatasource.fetchPlaylistVideos(playlistUrl);
     final title = result['title'] as String? ?? 'Unknown Playlist';
     final rawEntries = result['entries'] as List? ?? [];

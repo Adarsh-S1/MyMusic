@@ -57,96 +57,96 @@ class DirectoryScanner {
     }
 
     // Also migrate from legacy app-specific storage if present
-    restored += await _migrateLegacy(songDao);
+    //restored += await _migrateLegacy(songDao);
 
     return restored;
   }
 
   /// Migrate files from the old app-specific external storage to public storage.
-  static Future<int> _migrateLegacy(SongDao songDao) async {
-    int migrated = 0;
-    try {
-      final extDir = await getExternalStorageDirectory();
+  // static Future<int> _migrateLegacy(SongDao songDao) async {
+  //   int migrated = 0;
+  //   try {
+  //     final extDir = await getExternalStorageDirectory();
 
-      final legacyMusicDir = Directory('${extDir.path}/${AppConstants.musicSubDir}');
-      if (!await legacyMusicDir.exists()) return 0;
+  //     final legacyMusicDir = Directory('${extDir.path}/${AppConstants.musicSubDir}');
+  //     if (!await legacyMusicDir.exists()) return 0;
 
-      final publicMusicDir = await AppConstants.getPublicMusicDir();
-      final publicThumbDir = await AppConstants.getPublicThumbnailDir();
+  //     final publicMusicDir = await AppConstants.getPublicMusicDir();
+  //     final publicThumbDir = await AppConstants.getPublicThumbnailDir();
 
-      await for (final entity in legacyMusicDir.list()) {
-        if (entity is! File) continue;
-        final path = entity.path;
-        if (!_isAudioFile(path)) continue;
+  //     await for (final entity in legacyMusicDir.list()) {
+  //       if (entity is! File) continue;
+  //       final path = entity.path;
+  //       if (!_isAudioFile(path)) continue;
 
-        final filename = _basename(path);
-        final videoId = _extractVideoId(filename);
-        if (videoId == null) continue;
+  //       final filename = _basename(path);
+  //       final videoId = _extractVideoId(filename);
+  //       if (videoId == null) continue;
 
-        // Move to public directory
-        final newPath = '${publicMusicDir.path}/$filename';
-        final newFile = File(newPath);
-        if (!await newFile.exists()) {
-          await entity.rename(newPath);
-        }
+  //       // Move to public directory
+  //       final newPath = '${publicMusicDir.path}/$filename';
+  //       final newFile = File(newPath);
+  //       if (!await newFile.exists()) {
+  //         await entity.rename(newPath);
+  //       }
 
-        // Move thumbnail if it exists
-        final legacyThumbDir = Directory('${extDir.path}/${AppConstants.thumbnailSubDir}');
-        final legacyThumbPath = '${legacyThumbDir.path}/$videoId.jpg';
-        final legacyThumb = File(legacyThumbPath);
-        if (await legacyThumb.exists()) {
-          final newThumbPath = '${publicThumbDir.path}/$videoId.jpg';
-          final newThumbFile = File(newThumbPath);
-          if (!await newThumbFile.exists()) {
-            await legacyThumb.rename(newThumbPath);
-          }
-        }
+  //       // Move thumbnail if it exists
+  //       final legacyThumbDir = Directory('${extDir.path}/${AppConstants.thumbnailSubDir}');
+  //       final legacyThumbPath = '${legacyThumbDir.path}/$videoId.jpg';
+  //       final legacyThumb = File(legacyThumbPath);
+  //       if (await legacyThumb.exists()) {
+  //         final newThumbPath = '${publicThumbDir.path}/$videoId.jpg';
+  //         final newThumbFile = File(newThumbPath);
+  //         if (!await newThumbFile.exists()) {
+  //           await legacyThumb.rename(newThumbPath);
+  //         }
+  //       }
 
-        // Update DB record if exists, or create new
-        final existing = await songDao.getSongByVideoId(videoId);
-        final title = _extractTitle(filename, videoId);
-        final thumbPath = '${publicThumbDir.path}/$videoId.jpg';
+  //       // Update DB record if exists, or create new
+  //       final existing = await songDao.getSongByVideoId(videoId);
+  //       final title = _extractTitle(filename, videoId);
+  //       final thumbPath = '${publicThumbDir.path}/$videoId.jpg';
 
-        if (existing != null) {
-          // Update paths to point to new public location
-          await songDao.saveSong(
-            existing.copyWith(
-              localAudioPath: newPath,
-              localThumbnailPath: thumbPath,
-            ),
-          );
-        } else {
-          final song = Song(
-            id: '0',
-            videoId: videoId,
-            title: title,
-            artist: null,
-            localAudioPath: newPath,
-            localThumbnailPath: thumbPath,
-            duration: Duration.zero,
-            dateAdded: DateTime.now(),
-          );
-          await songDao.saveSong(song);
-        }
+  //       if (existing != null) {
+  //         // Update paths to point to new public location
+  //         await songDao.saveSong(
+  //           existing.copyWith(
+  //             localAudioPath: newPath,
+  //             localThumbnailPath: thumbPath,
+  //           ),
+  //         );
+  //       } else {
+  //         final song = Song(
+  //           id: '0',
+  //           videoId: videoId,
+  //           title: title,
+  //           artist: null,
+  //           localAudioPath: newPath,
+  //           localThumbnailPath: thumbPath,
+  //           duration: Duration.zero,
+  //           dateAdded: DateTime.now(),
+  //         );
+  //         await songDao.saveSong(song);
+  //       }
 
-        migrated++;
-      }
+  //       migrated++;
+  //     }
 
-      // Clean up legacy directories after migration
-      if (migrated > 0) {
-        try {
-          await legacyMusicDir.delete(recursive: true);
-          final legacyThumbDir = Directory('${extDir.path}/${AppConstants.thumbnailSubDir}');
-          if (await legacyThumbDir.exists()) {
-            await legacyThumbDir.delete(recursive: true);
-          }
-        } catch (_) {}
-      }
-    } catch (e) {
-      debugPrint('[DirectoryScanner] Legacy migration error: $e');
-    }
-    return migrated;
-  }
+  //     // Clean up legacy directories after migration
+  //     if (migrated > 0) {
+  //       try {
+  //         await legacyMusicDir.delete(recursive: true);
+  //         final legacyThumbDir = Directory('${extDir.path}/${AppConstants.thumbnailSubDir}');
+  //         if (await legacyThumbDir.exists()) {
+  //           await legacyThumbDir.delete(recursive: true);
+  //         }
+  //       } catch (_) {}
+  //     }
+  //   } catch (e) {
+  //     debugPrint('[DirectoryScanner] Legacy migration error: $e');
+  //   }
+  //   return migrated;
+  // }
 
   static Future<Directory> getExternalStorageDirectory() async {
     final dirs = await getExternalStorageDirectories();
@@ -196,8 +196,8 @@ class DirectoryScanner {
   /// Find the thumbnail file for a video ID in the public directory.
   static Future<String> _findThumbnail(String videoId) async {
     try {
-      final thumbDir = await AppConstants.getPublicThumbnailDir();
-      final thumbFile = File('${thumbDir.path}/$videoId.jpg');
+      final thumbDir = AppConstants.baseThumbnailDir;
+      final thumbFile = File('$thumbDir/$videoId.jpg');
       if (await thumbFile.exists()) return thumbFile.path;
     } catch (_) {}
     return '';

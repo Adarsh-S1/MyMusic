@@ -33,10 +33,10 @@ import 'package:mymusic/main.dart';
 /// survived a previous app uninstall.
 final isarProvider = FutureProvider<Isar>((ref) async {
   final dir = await getApplicationDocumentsDirectory();
-  final isar = await Isar.open(
-    [SongModelSchema, PlaylistModelSchema],
-    directory: dir.path,
-  );
+  final isar = await Isar.open([
+    SongModelSchema,
+    PlaylistModelSchema,
+  ], directory: dir.path);
 
   // Scan public storage and restore songs into the database.
   // This runs once at startup so previously-downloaded songs
@@ -184,10 +184,7 @@ class DownloadFormNotifier extends StateNotifier<DownloadFormState> {
     // Fallback to single video detection
     final videoId = _repo.validateYoutubeUrl(url);
     if (videoId == null) {
-      state = DownloadFormState(
-        url: url,
-        error: 'Invalid YouTube URL',
-      );
+      state = DownloadFormState(url: url, error: 'Invalid YouTube URL');
       return;
     }
 
@@ -195,10 +192,7 @@ class DownloadFormNotifier extends StateNotifier<DownloadFormState> {
 
     try {
       final metadata = await _repo.fetchVideoMetadata(videoId);
-      state = state.copyWith(
-        metadata: metadata,
-        isLoading: false,
-      );
+      state = state.copyWith(metadata: metadata, isLoading: false);
     } catch (e) {
       state = state.copyWith(
         isLoading: false,
@@ -214,8 +208,8 @@ class DownloadFormNotifier extends StateNotifier<DownloadFormState> {
 
 final downloadFormProvider =
     StateNotifierProvider<DownloadFormNotifier, DownloadFormState>((ref) {
-  return DownloadFormNotifier(ref.watch(downloaderRepositoryProvider));
-});
+      return DownloadFormNotifier(ref.watch(downloaderRepositoryProvider));
+    });
 
 /// Download queue notifier — manages active and queued downloads.
 class DownloadQueueNotifier extends StateNotifier<List<DownloadTask>> {
@@ -284,15 +278,22 @@ class DownloadQueueNotifier extends StateNotifier<List<DownloadTask>> {
 
   /// Enqueue a playlist and start sequential processing.
   /// Automatically creates a matching library playlist and adds songs to it.
-  void enqueuePlaylist(List<PlaylistEntry> entries, String playlistTitle) async {
-    final newTasks = entries.map((e) => DownloadTask(
-      id: DateTime.now().microsecondsSinceEpoch.toString() + e.videoId,
-      youtubeUrl: 'https://youtube.com/watch?v=${e.videoId}',
-      videoId: e.videoId,
-      title: e.title,
-      status: DownloadStatus.pending,
-    )).toList();
-    
+  void enqueuePlaylist(
+    List<PlaylistEntry> entries,
+    String playlistTitle,
+  ) async {
+    final newTasks = entries
+        .map(
+          (e) => DownloadTask(
+            id: DateTime.now().microsecondsSinceEpoch.toString() + e.videoId,
+            youtubeUrl: 'https://youtube.com/watch?v=${e.videoId}',
+            videoId: e.videoId,
+            title: e.title,
+            status: DownloadStatus.pending,
+          ),
+        )
+        .toList();
+
     state = [...state, ...newTasks];
 
     // Create a library playlist with the same name as the YouTube playlist
@@ -305,29 +306,42 @@ class DownloadQueueNotifier extends StateNotifier<List<DownloadTask>> {
     _processPlaylistQueue(playlistTitle, targetPlaylistId: playlistId);
   }
 
-  Future<void> _processPlaylistQueue(String playlistTitle, {String? targetPlaylistId}) async {
+  Future<void> _processPlaylistQueue(
+    String playlistTitle, {
+    String? targetPlaylistId,
+  }) async {
     if (_isProcessingPlaylist) return;
     _isProcessingPlaylist = true;
 
     try {
       while (true) {
         if (!mounted) break;
-        final nextTaskIndex = state.indexWhere((t) => t.status == DownloadStatus.pending);
+        final nextTaskIndex = state.indexWhere(
+          (t) => t.status == DownloadStatus.pending,
+        );
         if (nextTaskIndex == -1) break; // Queue finished
 
         final task = state[nextTaskIndex];
         if (task.videoId == null) continue;
 
-        await _downloadSingleTask(task.videoId!, task.id,
-            playlistTitle: playlistTitle, targetPlaylistId: targetPlaylistId);
+        await _downloadSingleTask(
+          task.videoId!,
+          task.id,
+          playlistTitle: playlistTitle,
+          targetPlaylistId: targetPlaylistId,
+        );
       }
     } finally {
       _isProcessingPlaylist = false;
     }
   }
 
-  Future<void> _downloadSingleTask(String videoId, String taskId,
-      {String? playlistTitle, String? targetPlaylistId}) async {
+  Future<void> _downloadSingleTask(
+    String videoId,
+    String taskId, {
+    String? playlistTitle,
+    String? targetPlaylistId,
+  }) async {
     // Look up the original title from the queued task
     final existingTask = state.cast<DownloadTask?>().firstWhere(
       (t) => t!.id == taskId,
@@ -339,14 +353,14 @@ class DownloadQueueNotifier extends StateNotifier<List<DownloadTask>> {
     final downloadStream = _repo.downloadAudioDirect(
       videoId: videoId,
       title: originalTitle,
-      playlistName: playlistTitle,
+      // playlistName: playlistTitle,
     );
     late StreamSubscription<DownloadTask> sub;
 
     sub = downloadStream.listen(
       (DownloadTask update) {
         final finalUpdate = update.copyWith(id: taskId);
-        
+
         if (mounted) {
           _updateTaskState(finalUpdate);
         }
@@ -362,7 +376,7 @@ class DownloadQueueNotifier extends StateNotifier<List<DownloadTask>> {
           _subscriptions.remove(taskId);
           if (!completer.isCompleted) completer.complete();
         } else if (finalUpdate.status == DownloadStatus.failed ||
-                   finalUpdate.status == DownloadStatus.cancelled) {
+            finalUpdate.status == DownloadStatus.cancelled) {
           sub.cancel();
           _subscriptions.remove(taskId);
           if (!completer.isCompleted) completer.complete();
@@ -372,17 +386,18 @@ class DownloadQueueNotifier extends StateNotifier<List<DownloadTask>> {
         if (mounted) {
           final idx = state.indexWhere((t) => t.id == taskId);
           if (idx >= 0) {
-            state = [...state]..[idx] = state[idx].copyWith(
-              status: DownloadStatus.failed,
-              errorMessage: e.toString()
-            );
+            state = [...state]
+              ..[idx] = state[idx].copyWith(
+                status: DownloadStatus.failed,
+                errorMessage: e.toString(),
+              );
           }
         }
         _subscriptions.remove(taskId);
         if (!completer.isCompleted) completer.complete();
       },
     );
-    
+
     _subscriptions[taskId] = sub;
     await completer.future;
   }
@@ -412,11 +427,13 @@ class DownloadQueueNotifier extends StateNotifier<List<DownloadTask>> {
     if (task.status != DownloadStatus.failed || task.videoId == null) return;
 
     // Reset to pending
-    _updateTaskState(task.copyWith(
-      status: DownloadStatus.pending,
-      progress: 0.0,
-      errorMessage: null,
-    ));
+    _updateTaskState(
+      task.copyWith(
+        status: DownloadStatus.pending,
+        progress: 0.0,
+        errorMessage: null,
+      ),
+    );
 
     // Small delay to avoid rate-limiting
     await Future.delayed(const Duration(seconds: 2));
@@ -454,11 +471,13 @@ class DownloadQueueNotifier extends StateNotifier<List<DownloadTask>> {
         if (task.videoId == null) continue;
 
         // Reset to pending
-        _updateTaskState(task.copyWith(
-          status: DownloadStatus.pending,
-          progress: 0.0,
-          errorMessage: null,
-        ));
+        _updateTaskState(
+          task.copyWith(
+            status: DownloadStatus.pending,
+            progress: 0.0,
+            errorMessage: null,
+          ),
+        );
 
         // Delay between retries to respect rate limits (skip delay for first)
         if (i > 0) {
@@ -481,10 +500,12 @@ class DownloadQueueNotifier extends StateNotifier<List<DownloadTask>> {
   /// Remove completed/failed tasks from the list.
   void clearFinished() {
     state = state
-        .where((t) =>
-            t.status != DownloadStatus.completed &&
-            t.status != DownloadStatus.failed &&
-            t.status != DownloadStatus.cancelled)
+        .where(
+          (t) =>
+              t.status != DownloadStatus.completed &&
+              t.status != DownloadStatus.failed &&
+              t.status != DownloadStatus.cancelled,
+        )
         .toList();
   }
 
@@ -499,12 +520,12 @@ class DownloadQueueNotifier extends StateNotifier<List<DownloadTask>> {
 
 final downloadQueueProvider =
     StateNotifierProvider<DownloadQueueNotifier, List<DownloadTask>>((ref) {
-  return DownloadQueueNotifier(
-    ref.watch(downloaderRepositoryProvider),
-    ref.watch(libraryRepositoryProvider),
-    ref,
-  );
-});
+      return DownloadQueueNotifier(
+        ref.watch(downloaderRepositoryProvider),
+        ref.watch(libraryRepositoryProvider),
+        ref,
+      );
+    });
 
 // ═══════════════════════════════════════════════════════════
 // LIBRARY PROVIDERS
@@ -536,7 +557,10 @@ final playlistsProvider = FutureProvider<List<Playlist>>((ref) {
 });
 
 /// Songs for a specific playlist.
-final playlistSongsProvider = FutureProvider.family<List<Song>, String>((ref, playlistId) {
+final playlistSongsProvider = FutureProvider.family<List<Song>, String>((
+  ref,
+  playlistId,
+) {
   return ref.watch(libraryRepositoryProvider).getSongsForPlaylist(playlistId);
 });
 
@@ -640,14 +664,14 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
     _completionSub = player.playerStateStream
         .where((ps) => ps.processingState == ProcessingState.completed)
         .listen((_) async {
-      if (mounted && !_isAdvancing) {
-        _isAdvancing = true;
-        // Small debounce to prevent race condition when state is transitioning
-        await Future.delayed(const Duration(milliseconds: 300));
-        if (mounted) next();
-        _isAdvancing = false;
-      }
-    });
+          if (mounted && !_isAdvancing) {
+            _isAdvancing = true;
+            // Small debounce to prevent race condition when state is transitioning
+            await Future.delayed(const Duration(milliseconds: 300));
+            if (mounted) next();
+            _isAdvancing = false;
+          }
+        });
   }
 
   /// Actually load and play a song on the audio player.
@@ -743,7 +767,8 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
         duration: Duration.zero,
       );
       _loadAndPlay(nextSong);
-    } else if (state.repeatMode == SongRepeatMode.all && state.queue.isNotEmpty) {
+    } else if (state.repeatMode == SongRepeatMode.all &&
+        state.queue.isNotEmpty) {
       final firstSong = state.queue[0];
       state = state.copyWith(
         currentIndex: 0,
@@ -842,8 +867,9 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
   }
 }
 
-final playerProvider =
-    StateNotifierProvider<PlayerNotifier, PlayerState>((ref) {
+final playerProvider = StateNotifierProvider<PlayerNotifier, PlayerState>((
+  ref,
+) {
   final songDao = ref.watch(songDaoProvider);
   return PlayerNotifier(songDao);
 });

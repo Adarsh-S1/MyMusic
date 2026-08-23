@@ -196,8 +196,8 @@ class DirectoryScanner {
   /// Find the thumbnail file for a video ID in the public directory.
   static Future<String> _findThumbnail(String videoId) async {
     try {
-      final thumbDir = AppConstants.baseThumbnailDir;
-      final thumbFile = File('$thumbDir/$videoId.jpg');
+      final thumbDir = await AppConstants.getPublicThumbnailDir();
+      final thumbFile = File('${thumbDir.path}/$videoId.jpg');
       if (await thumbFile.exists()) return thumbFile.path;
     } catch (_) {}
     return '';

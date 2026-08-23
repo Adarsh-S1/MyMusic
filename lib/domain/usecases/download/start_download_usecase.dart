@@ -10,12 +10,12 @@ class StartDownloadUsecase {
   Stream<DownloadTask> execute({
     required String videoId,
     required String title,
-    String? playlistName,
+    // String? playlistName,
   }) {
     return _repository.downloadAudioDirect(
       videoId: videoId,
       title: title,
-      playlistName: playlistName,
+      // playlistName: playlistName,
     );
   }
 }

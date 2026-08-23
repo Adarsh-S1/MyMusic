@@ -9,15 +9,16 @@ class AppConstants {
 
   // Storage paths
   static const String baseMusicDir = '/storage/emulated/0/Music/YT-Groove';
-  static const String baseThumbnailDir = '/storage/emulated/0/Pictures/YT-Groove';
+  static const String baseThumbnailDir =
+      '/storage/emulated/0/Pictures/YT-Groove';
 
   // Public shared storage directory names (persists after app uninstall)
   static const String publicMusicDir = 'YT-Groove';
   static const String publicThumbnailDir = 'YT-Groove';
 
   // Legacy storage paths (kept for migration from old installs)
-  static const String musicSubDir = 'yt-groove/audio';
-  static const String thumbnailSubDir = 'yt-groove/thumbnails';
+  //static const String musicSubDir = 'yt-groove/audio';
+  //static const String thumbnailSubDir = 'yt-groove/thumbnails';
 
   /// Get the public Music directory for storing downloaded audio files.
   /// Files here survive app uninstall.
@@ -30,7 +31,9 @@ class AppConstants {
   /// Get the public Pictures directory for storing thumbnails.
   /// Files here survive app uninstall.
   static Future<Directory> getPublicThumbnailDir() async {
-    final thumbDir = Directory('/storage/emulated/0/Pictures/$publicThumbnailDir');
+    final thumbDir = Directory(
+      '/storage/emulated/0/Pictures/$publicThumbnailDir',
+    );
     await thumbDir.create(recursive: true);
     return thumbDir;
   }
@@ -44,11 +47,13 @@ class AppConstants {
   static const Duration searchDebounce = Duration(milliseconds: 300);
 
   // Audio notification
-  static const String audioNotificationChannelId = 'com.example.mymusic.channel.audio';
+  static const String audioNotificationChannelId =
+      'com.example.mymusic.channel.audio';
   static const String audioNotificationChannelName = 'YT-Groove Playback';
 
   // Download notification
-  static const String downloadNotificationChannelId = 'com.example.mymusic.channel.download';
+  static const String downloadNotificationChannelId =
+      'com.example.mymusic.channel.download';
   static const String downloadNotificationChannelName = 'YT-Groove Downloads';
 }
 
@@ -77,9 +82,7 @@ class YoutubePatterns {
   );
 
   /// Matches the `list=PLAYLIST_ID` parameter in any YouTube URL.
-  static final RegExp playlistParam = RegExp(
-    r'[?&]list=([a-zA-Z0-9_-]+)',
-  );
+  static final RegExp playlistParam = RegExp(r'[?&]list=([a-zA-Z0-9_-]+)');
 
   /// Matches a pure playlist URL: youtube.com/playlist?list=PLAYLIST_ID
   static final RegExp playlistUrl = RegExp(

@@ -52,7 +52,7 @@ abstract class IDownloaderRepository {
   Stream<DownloadTask> downloadAudioDirect({
     required String videoId,
     required String title,
-    String? playlistName,
+    //String? playlistName,
   });
 
   /// Cancels an active download.

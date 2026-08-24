@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:mymusic/presentation/providers/providers.dart';
-import 'package:mymusic/presentation/screens/now_playing/now_playing_screen.dart';
 import 'package:mymusic/presentation/widgets/song_thumbnail.dart';
 
 /// Persistent mini player widget shown above the BottomNavigationBar.
@@ -19,14 +19,16 @@ class MiniPlayer extends ConsumerWidget {
 
     return GestureDetector(
       onTap: () {
-        Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => const NowPlayingScreen()),
-        );
+        context.push('/now-playing');
       },
       child: Container(
         decoration: BoxDecoration(
           color: theme.colorScheme.surfaceContainerHighest,
-          border: Border(top: BorderSide(color: theme.colorScheme.outlineVariant.withValues(alpha: 0.3))),
+          border: Border(
+            top: BorderSide(
+              color: theme.colorScheme.outlineVariant.withValues(alpha: 0.3),
+            ),
+          ),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -34,7 +36,8 @@ class MiniPlayer extends ConsumerWidget {
             // Progress indicator
             LinearProgressIndicator(
               value: player.duration.inMilliseconds > 0
-                  ? player.position.inMilliseconds / player.duration.inMilliseconds
+                  ? player.position.inMilliseconds /
+                        player.duration.inMilliseconds
                   : 0,
               minHeight: 2,
               backgroundColor: Colors.transparent,
@@ -64,13 +67,17 @@ class MiniPlayer extends ConsumerWidget {
                           song.title,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                         Text(
                           song.artist ?? 'Unknown Artist',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
                         ),
                       ],
                     ),
@@ -82,12 +89,18 @@ class MiniPlayer extends ConsumerWidget {
                       player.isPlaying ? Icons.pause : Icons.play_arrow,
                       color: theme.colorScheme.onSurface,
                     ),
-                    onPressed: () => ref.read(playerProvider.notifier).togglePlayPause(),
+                    onPressed: () =>
+                        ref.read(playerProvider.notifier).togglePlayPause(),
                   ),
                   // Next
                   IconButton(
-                    icon: Icon(Icons.skip_next, color: theme.colorScheme.onSurface),
-                    onPressed: player.hasNext ? () => ref.read(playerProvider.notifier).next() : null,
+                    icon: Icon(
+                      Icons.skip_next,
+                      color: theme.colorScheme.onSurface,
+                    ),
+                    onPressed: player.hasNext
+                        ? () => ref.read(playerProvider.notifier).next()
+                        : null,
                   ),
                 ],
               ),

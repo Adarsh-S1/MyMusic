@@ -16,6 +16,12 @@
         android:name="com.chaquo.python.android.PyApplication"
         android:label="MyMusic"
         android:icon="@mipmap/ic_launcher">
+
+        <!-- Android Auto: declare this app as a media source -->
+        <meta-data
+            android:name="com.google.android.gms.car.application"
+            android:resource="@xml/automotive_app_desc" />
+
         <activity
             android:name=".MainActivity"
             android:exported="true"

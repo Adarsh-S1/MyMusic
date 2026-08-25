@@ -1,18 +1,13 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:isar/isar.dart';
-import 'package:path_provider/path_provider.dart';
 
 import 'package:mymusic/core/constants/app_constants.dart';
-import 'package:mymusic/core/utils/directory_scanner.dart';
-import 'package:mymusic/core/utils/permission_helper.dart';
+
 import 'package:mymusic/data/datasources/local/song_dao.dart';
 import 'package:mymusic/data/datasources/local/playlist_dao.dart';
 import 'package:mymusic/data/datasources/remote/chaquopy_datasource.dart';
-import 'package:mymusic/data/models/song_model.dart';
-import 'package:mymusic/data/models/playlist_model.dart';
 import 'package:mymusic/data/repositories/downloader_repository_impl.dart';
 import 'package:mymusic/data/repositories/library_repository_impl.dart';
 import 'package:mymusic/domain/entities/download_task.dart';
@@ -28,32 +23,11 @@ import 'package:mymusic/main.dart';
 // DATA LAYER PROVIDERS
 // ═══════════════════════════════════════════════════════════
 
-/// Isar database instance — initialized once at app start.
-/// After opening, scans public directories to restore songs that
-/// survived a previous app uninstall.
-final isarProvider = FutureProvider<Isar>((ref) async {
-  final dir = await getApplicationDocumentsDirectory();
-  final isar = await Isar.open([
-    SongModelSchema,
-    PlaylistModelSchema,
-  ], directory: dir.path);
-
-  // Scan public storage and restore songs into the database.
-  // This runs once at startup so previously-downloaded songs
-  // reappear even if the app was reinstalled.
-  try {
-    await PermissionHelper.requestManageStorage();
-    final songDao = SongDao(isar);
-    final restored = await DirectoryScanner.scanAndRestore(songDao);
-    if (restored > 0) {
-      debugPrint('[Startup] Restored $restored songs from public storage');
-    }
-  } catch (e) {
-    debugPrint('[Startup] Directory scan failed: $e');
-  }
-
-  ref.onDispose(() => isar.close());
-  return isar;
+/// Isar database instance — opened once in main() before Riverpod starts.
+/// Reuses the globalIsar instance so the audio handler and providers
+/// share the same database connection.
+final isarProvider = Provider<Isar>((ref) {
+  return globalIsar;
 });
 
 /// Chaquopy datasource provider — persistent isolate for all yt-dlp calls.
@@ -65,13 +39,13 @@ final chaquopyDatasourceProvider = Provider<ChaquopyDatasource>((ref) {
 
 /// Song DAO provider.
 final songDaoProvider = Provider<SongDao>((ref) {
-  final isar = ref.watch(isarProvider).requireValue;
+  final isar = ref.watch(isarProvider);
   return SongDao(isar);
 });
 
 /// Playlist DAO provider.
 final playlistDaoProvider = Provider<PlaylistDao>((ref) {
-  final isar = ref.watch(isarProvider).requireValue;
+  final isar = ref.watch(isarProvider);
   return PlaylistDao(isar);
 });
 

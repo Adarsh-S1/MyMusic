@@ -4,13 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:isar/isar.dart';
 
 import 'package:mymusic/core/constants/app_constants.dart';
-import 'package:mymusic/core/utils/directory_scanner.dart';
-import 'package:mymusic/core/utils/permission_helper.dart';
 import 'package:mymusic/data/datasources/local/song_dao.dart';
 import 'package:mymusic/data/datasources/local/playlist_dao.dart';
 import 'package:mymusic/data/datasources/remote/chaquopy_datasource.dart';
-import 'package:mymusic/data/models/song_model.dart';
-import 'package:mymusic/data/models/playlist_model.dart';
 import 'package:mymusic/data/repositories/downloader_repository_impl.dart';
 import 'package:mymusic/data/repositories/library_repository_impl.dart';
 import 'package:mymusic/domain/entities/download_task.dart';

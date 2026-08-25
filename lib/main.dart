@@ -67,6 +67,19 @@ class YtGrooveAudioHandler extends BaseAudioHandler with SeekHandler {
         mediaItem.add(_songToMediaItem(_songQueue[index]));
       }
     });
+
+    // When just_audio detects the real duration from the audio file header,
+    // re-broadcast the mediaItem with the correct duration. This is critical
+    // for restored songs that have Duration.zero in the database — without
+    // this, Android Auto hides the seek bar and timestamps.
+    _player.durationStream.listen((duration) {
+      if (duration != null && duration > Duration.zero) {
+        final current = mediaItem.value;
+        if (current != null && current.duration != duration) {
+          mediaItem.add(current.copyWith(duration: duration));
+        }
+      }
+    });
   }
 
   AudioPlayer get player => _player;

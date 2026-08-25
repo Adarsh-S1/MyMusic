@@ -28,10 +28,15 @@ import 'package:mymusic/core/utils/permission_helper.dart';
 
 // ═══════════════════════════════════════════════════════════
 // Audio Handler — bridges just_audio + audio_service
+// Uses ConcatenatingAudioSource for native queue management.
 // ═══════════════════════════════════════════════════════════
 
 class YtGrooveAudioHandler extends BaseAudioHandler with SeekHandler {
   final AudioPlayer _player = AudioPlayer();
+  final ConcatenatingAudioSource _playlist = ConcatenatingAudioSource(
+    children: [],
+  );
+
   final SongDao _songDao;
   final PlaylistDao _playlistDao;
 
@@ -41,47 +46,70 @@ class YtGrooveAudioHandler extends BaseAudioHandler with SeekHandler {
   static const _playlistsFolderId = 'playlists';
   static const _playlistPrefix = 'playlist_';
 
-  // Current Android Auto queue context for skipToQueueItem
-  List<Song> _autoQueue = [];
+  // The current Song list mirroring _playlist's children.
+  // Used to map currentIndex → Song entity.
+  List<Song> _songQueue = [];
 
   YtGrooveAudioHandler({
     required SongDao songDao,
     required PlaylistDao playlistDao,
-  })  : _songDao = songDao,
-        _playlistDao = playlistDao {
-    // Broadcast playback state changes
-    _player.playbackEventStream.listen((event) {
-      final playing = _player.playing;
-      playbackState.add(
-        playbackState.value.copyWith(
-          controls: [
-            MediaControl.skipToPrevious,
-            if (playing) MediaControl.pause else MediaControl.play,
-            MediaControl.skipToNext,
-          ],
-          systemActions: const {
-            MediaAction.seek,
-            MediaAction.seekForward,
-            MediaAction.seekBackward,
-          },
-          androidCompactActionIndices: const [0, 1, 2],
-          processingState: const {
-            ProcessingState.idle: AudioProcessingState.idle,
-            ProcessingState.loading: AudioProcessingState.loading,
-            ProcessingState.buffering: AudioProcessingState.buffering,
-            ProcessingState.ready: AudioProcessingState.ready,
-            ProcessingState.completed: AudioProcessingState.completed,
-          }[_player.processingState]!,
-          playing: playing,
-          updatePosition: _player.position,
-          bufferedPosition: _player.bufferedPosition,
-          speed: _player.speed,
-        ),
-      );
+  }) : _songDao = songDao,
+       _playlistDao = playlistDao {
+    // Pipe just_audio events directly to audio_service playbackState.
+    // This is the officially recommended pattern — no manual .listen() + .add().
+    _player.playbackEventStream.map(_transformEvent).pipe(playbackState);
+
+    // When just_audio changes the current item (on skip, auto-advance, etc.),
+    // update the mediaItem stream so Android Auto / notification shows the
+    // correct track info.
+    _player.currentIndexStream.listen((index) {
+      if (index != null && index >= 0 && index < _songQueue.length) {
+        mediaItem.add(_songToMediaItem(_songQueue[index]));
+      }
     });
   }
 
   AudioPlayer get player => _player;
+
+  /// The current song queue (read-only for PlayerNotifier).
+  List<Song> get songQueue => _songQueue;
+
+  // ═══════════════════════════════════════════════════════════
+  // Queue Management
+  // ═══════════════════════════════════════════════════════════
+
+  /// Load a queue of songs into just_audio's ConcatenatingAudioSource
+  /// and start from [startIndex]. This is the ONLY place we call
+  /// _player.setAudioSource(), so all track transitions after this
+  /// are handled natively by just_audio (no setFilePath calls).
+  Future<void> loadQueue(List<Song> songs, int startIndex) async {
+    _songQueue = List.unmodifiable(songs);
+
+    // Broadcast the queue to audio_service (Android Auto / notification).
+    queue.add(songs.map(_songToMediaItem).toList());
+
+    // Clear and rebuild the ConcatenatingAudioSource.
+    await _playlist.clear();
+    await _playlist.addAll(
+      songs
+          .map(
+            (s) => AudioSource.file(s.localAudioPath, tag: _songToMediaItem(s)),
+          )
+          .toList(),
+    );
+
+    // Set the audio source. just_audio now owns the entire playlist.
+    await _player.setAudioSource(
+      _playlist,
+      initialIndex: startIndex,
+      initialPosition: Duration.zero,
+    );
+
+    // Immediately broadcast the current media item.
+    if (startIndex >= 0 && startIndex < songs.length) {
+      mediaItem.add(_songToMediaItem(songs[startIndex]));
+    }
+  }
 
   // ═══════════════════════════════════════════════════════════
   // Android Auto — Media Browsing
@@ -102,7 +130,6 @@ class YtGrooveAudioHandler extends BaseAudioHandler with SeekHandler {
   }
 
   /// Called by Android Auto to browse the media library.
-  /// Returns a list of MediaItems for the given parent ID.
   @override
   Future<List<MediaItem>> getChildren(
     String parentMediaId, [
@@ -110,13 +137,8 @@ class YtGrooveAudioHandler extends BaseAudioHandler with SeekHandler {
   ]) async {
     switch (parentMediaId) {
       case AudioService.browsableRootId:
-        // Root menu — show browsable categories
         return [
-          const MediaItem(
-            id: _allSongsId,
-            title: 'All Songs',
-            playable: false,
-          ),
+          const MediaItem(id: _allSongsId, title: 'All Songs', playable: false),
           const MediaItem(
             id: _recentId,
             title: 'Recently Added',
@@ -140,19 +162,21 @@ class YtGrooveAudioHandler extends BaseAudioHandler with SeekHandler {
       case _playlistsFolderId:
         final playlists = await _playlistDao.getAllPlaylists();
         return playlists
-            .map((p) => MediaItem(
-                  id: '$_playlistPrefix${p.id}',
-                  title: p.name,
-                  playable: false,
-                ))
+            .map(
+              (p) => MediaItem(
+                id: '$_playlistPrefix${p.id}',
+                title: p.name,
+                playable: false,
+              ),
+            )
             .toList();
 
       default:
-        // Handle individual playlist browsing: "playlist_<id>"
         if (parentMediaId.startsWith(_playlistPrefix)) {
           final playlistId = parentMediaId.substring(_playlistPrefix.length);
-          final playlist =
-              await _playlistDao.getPlaylistById(int.parse(playlistId));
+          final playlist = await _playlistDao.getPlaylistById(
+            int.parse(playlistId),
+          );
           if (playlist == null) return [];
 
           final songs = <Song>[];
@@ -167,7 +191,6 @@ class YtGrooveAudioHandler extends BaseAudioHandler with SeekHandler {
   }
 
   /// Called by Android Auto when the user taps a song to play it.
-  /// Loads the song, builds a queue from the browse context, and starts playback.
   @override
   Future<void> playFromMediaId(
     String mediaId, [
@@ -176,69 +199,32 @@ class YtGrooveAudioHandler extends BaseAudioHandler with SeekHandler {
     final song = await _songDao.getSongByVideoId(mediaId);
     if (song == null) return;
 
-    // Build queue: if we have a cached auto queue that contains this song,
-    // use it. Otherwise, fall back to all songs.
+    // Build queue context: if the current queue contains this song, use it.
+    // Otherwise fall back to all songs.
     List<Song> queueSongs;
-    if (_autoQueue.any((s) => s.videoId == mediaId)) {
-      queueSongs = _autoQueue;
+    if (_songQueue.any((s) => s.videoId == mediaId)) {
+      queueSongs = List.from(_songQueue);
     } else {
       queueSongs = await _songDao.getAllSongs();
-      _autoQueue = queueSongs;
     }
 
-    // Update the queue stream so Android Auto shows the queue
-    queue.add(queueSongs.map(_songToMediaItem).toList());
+    int startIndex = queueSongs.indexWhere((s) => s.videoId == mediaId);
+    if (startIndex == -1) startIndex = 0;
 
-    // Play the selected song
-    await playFromSong(song);
+    await loadQueue(queueSongs, startIndex);
+    await _player.play();
   }
 
-  /// Called by Android Auto when the user selects a specific item in the queue.
+  /// Called by Android Auto when the user selects a specific queue item.
   @override
   Future<void> skipToQueueItem(int index) async {
-    if (index < 0 || index >= _autoQueue.length) return;
-    final song = _autoQueue[index];
-
-    // Update the queue stream position
-    queue.add(_autoQueue.map(_songToMediaItem).toList());
-
-    await playFromSong(song);
+    if (index < 0 || index >= _songQueue.length) return;
+    await _player.seek(Duration.zero, index: index);
   }
 
   // ═══════════════════════════════════════════════════════════
-  // Core Playback
+  // Core Playback — all delegate to just_audio
   // ═══════════════════════════════════════════════════════════
-
-  /// Returns the detected duration from the audio file.
-  Future<Duration> playFromSong(Song song) async {
-    final audioFile = File(song.localAudioPath);
-    final thumbFile = File(song.localThumbnailPath);
-
-    if (!audioFile.existsSync()) {
-      throw Exception('Audio file not found: ${song.localAudioPath}');
-    }
-
-    // Set the file first so just_audio can detect duration
-    await _player.setFilePath(song.localAudioPath);
-
-    // Use detected duration, fall back to stored duration
-    final detectedDuration = _player.duration ?? song.duration;
-
-    mediaItem.add(
-      MediaItem(
-        id: song.videoId,
-        title: song.title,
-        artist: song.artist ?? 'Unknown Artist',
-        duration: detectedDuration,
-        artUri: thumbFile.existsSync()
-            ? Uri.file(song.localThumbnailPath)
-            : null,
-      ),
-    );
-
-    await _player.play();
-    return detectedDuration;
-  }
 
   @override
   Future<void> play() => _player.play();
@@ -250,40 +236,72 @@ class YtGrooveAudioHandler extends BaseAudioHandler with SeekHandler {
   Future<void> seek(Duration position) => _player.seek(position);
 
   @override
+  Future<void> skipToNext() => _player.seekToNext();
+
+  @override
+  Future<void> skipToPrevious() => _player.seekToPrevious();
+
+  @override
   Future<void> stop() async {
     await _player.stop();
     return super.stop();
   }
 
-  VoidCallback? onNext;
-  VoidCallback? onPrevious;
+  /// Set loop mode on the underlying player.
+  void setLoopMode(LoopMode mode) => _player.setLoopMode(mode);
 
-  @override
-  Future<void> skipToNext() async {
-    onNext?.call();
-  }
+  /// Set shuffle mode on the underlying player.
+  void setShuffleModeEnabled(bool enabled) =>
+      _player.setShuffleModeEnabled(enabled);
 
-  @override
-  Future<void> skipToPrevious() async {
-    onPrevious?.call();
+  // ═══════════════════════════════════════════════════════════
+  // State Transform — maps just_audio events to audio_service
+  // ═══════════════════════════════════════════════════════════
+
+  /// Pure function: converts a just_audio PlaybackEvent into an
+  /// audio_service PlaybackState. Used by .pipe(playbackState).
+  PlaybackState _transformEvent(PlaybackEvent event) {
+    return PlaybackState(
+      controls: [
+        MediaControl.skipToPrevious,
+        if (_player.playing) MediaControl.pause else MediaControl.play,
+        MediaControl.skipToNext,
+      ],
+      systemActions: const {
+        MediaAction.seek,
+        MediaAction.seekForward,
+        MediaAction.seekBackward,
+      },
+      androidCompactActionIndices: const [0, 1, 2],
+      processingState: const {
+        ProcessingState.idle: AudioProcessingState.idle,
+        ProcessingState.loading: AudioProcessingState.loading,
+        ProcessingState.buffering: AudioProcessingState.buffering,
+        ProcessingState.ready: AudioProcessingState.ready,
+        ProcessingState.completed: AudioProcessingState.completed,
+      }[_player.processingState]!,
+      playing: _player.playing,
+      updatePosition: _player.position,
+      bufferedPosition: _player.bufferedPosition,
+      speed: _player.speed,
+      queueIndex: event.currentIndex,
+    );
   }
 }
 
 late YtGrooveAudioHandler audioHandler;
 
+// Global Isar instance — opened once in main(), shared with providers.
+late Isar globalIsar;
+
 // ═══════════════════════════════════════════════════════════
 // Main Entry Point
 // ═══════════════════════════════════════════════════════════
 
-/// Pre-opened Isar instance, available before Riverpod initializes.
-/// Shared between the audio handler and the provider layer.
-late Isar globalIsar;
-
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Open Isar early so the audio handler can browse the library
-  // for Android Auto before the Flutter UI is ready.
+  // Open Isar FIRST so the audio handler can access it for Android Auto browsing.
   final dir = await getApplicationDocumentsDirectory();
   globalIsar = await Isar.open([
     SongModelSchema,
@@ -304,15 +322,13 @@ Future<void> main() async {
     debugPrint('[Startup] Directory scan failed: $e');
   }
 
-  // Initialize audio service with our handler (now with DB access)
+  // Initialize audio service with our handler
   audioHandler = await AudioService.init(
-    builder: () => YtGrooveAudioHandler(
-      songDao: songDao,
-      playlistDao: playlistDao,
-    ),
+    builder: () =>
+        YtGrooveAudioHandler(songDao: songDao, playlistDao: playlistDao),
     config: const AudioServiceConfig(
       androidNotificationChannelId: 'com.example.mymusic.channel.audio',
-      androidNotificationChannelName: 'YT-Groove Playback',
+      androidNotificationChannelName: 'MyMusic Playback',
       androidNotificationOngoing: true,
       androidStopForegroundOnPause: true,
     ),
@@ -518,20 +534,48 @@ class YtGrooveApp extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Isar is already initialized in main() before runApp(),
-    // so no async loading state is needed here.
-    return MaterialApp.router(
-      title: 'My Music',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF6C5CE7),
-          brightness: Brightness.dark,
+    // Wait for Isar to initialize
+    final isarAsync = ref.watch(isarProvider);
+
+    return isarAsync.when(
+      data: (_) => MaterialApp.router(
+        title: 'My Music',
+        debugShowCheckedModeBanner: false,
+        theme: ThemeData(
+          colorScheme: ColorScheme.fromSeed(
+            seedColor: const Color(0xFF6C5CE7),
+            brightness: Brightness.dark,
+          ),
+          useMaterial3: true,
+          fontFamily: 'Roboto',
         ),
-        useMaterial3: true,
-        fontFamily: 'Roboto',
+        routerConfig: _router,
       ),
-      routerConfig: _router,
+      loading: () => MaterialApp(
+        debugShowCheckedModeBanner: false,
+        theme: ThemeData(
+          colorScheme: ColorScheme.fromSeed(
+            seedColor: const Color(0xFF6C5CE7),
+            brightness: Brightness.dark,
+          ),
+          useMaterial3: true,
+        ),
+        home: const Scaffold(
+          body: Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(height: 16),
+                Text('Loading My Music...'),
+              ],
+            ),
+          ),
+        ),
+      ),
+      error: (e, _) => MaterialApp(
+        home: Scaffold(body: Center(child: Text('Error initializing: $e'))),
+      ),
     );
   }
 }

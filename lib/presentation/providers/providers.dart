@@ -1,18 +1,12 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:isar/isar.dart';
-import 'package:path_provider/path_provider.dart';
 
 import 'package:mymusic/core/constants/app_constants.dart';
-import 'package:mymusic/core/utils/directory_scanner.dart';
-import 'package:mymusic/core/utils/permission_helper.dart';
 import 'package:mymusic/data/datasources/local/song_dao.dart';
 import 'package:mymusic/data/datasources/local/playlist_dao.dart';
 import 'package:mymusic/data/datasources/remote/chaquopy_datasource.dart';
-import 'package:mymusic/data/models/song_model.dart';
-import 'package:mymusic/data/models/playlist_model.dart';
 import 'package:mymusic/data/repositories/downloader_repository_impl.dart';
 import 'package:mymusic/data/repositories/library_repository_impl.dart';
 import 'package:mymusic/domain/entities/download_task.dart';
@@ -28,32 +22,12 @@ import 'package:mymusic/main.dart';
 // DATA LAYER PROVIDERS
 // ═══════════════════════════════════════════════════════════
 
-/// Isar database instance — initialized once at app start.
-/// After opening, scans public directories to restore songs that
-/// survived a previous app uninstall.
+/// Isar database instance — already opened in main() and stored in globalIsar.
+/// The directory scan also happens in main() before this provider is accessed.
 final isarProvider = FutureProvider<Isar>((ref) async {
-  final dir = await getApplicationDocumentsDirectory();
-  final isar = await Isar.open([
-    SongModelSchema,
-    PlaylistModelSchema,
-  ], directory: dir.path);
-
-  // Scan public storage and restore songs into the database.
-  // This runs once at startup so previously-downloaded songs
-  // reappear even if the app was reinstalled.
-  try {
-    await PermissionHelper.requestManageStorage();
-    final songDao = SongDao(isar);
-    final restored = await DirectoryScanner.scanAndRestore(songDao);
-    if (restored > 0) {
-      debugPrint('[Startup] Restored $restored songs from public storage');
-    }
-  } catch (e) {
-    debugPrint('[Startup] Directory scan failed: $e');
-  }
-
-  ref.onDispose(() => isar.close());
-  return isar;
+  // globalIsar is opened in main() so the audio handler can access the DB
+  // for Android Auto browsing. We reuse it here.
+  return globalIsar;
 });
 
 /// Chaquopy datasource provider — persistent isolate for all yt-dlp calls.
@@ -618,22 +592,26 @@ class PlayerState {
   bool get hasPrevious => currentIndex > 0;
 }
 
-/// Player notifier — wraps just_audio + audio_service.
-/// This notifier now actually drives the audio handler to play/pause/seek.
+/// Player notifier — delegates all playback to YtGrooveAudioHandler.
+///
+/// The audio handler uses ConcatenatingAudioSource internally, so all
+/// track transitions (next/previous/auto-advance on completion) are
+/// handled natively by just_audio. This notifier simply:
+///   1. Calls audioHandler.loadQueue() to set up a playlist.
+///   2. Listens to the player's streams to keep PlayerState in sync.
+///   3. Delegates skip/seek/pause/play to the audio handler.
 class PlayerNotifier extends StateNotifier<PlayerState> {
   StreamSubscription<Duration>? _positionSub;
   StreamSubscription<Duration?>? _durationSub;
   StreamSubscription<bool>? _playingSub;
-  StreamSubscription<void>? _completionSub;
+  StreamSubscription<int?>? _indexSub;
   final SongDao _songDao;
 
   PlayerNotifier(this._songDao) : super(const PlayerState()) {
     _initAudioListeners();
-    audioHandler.onNext = next;
-    audioHandler.onPrevious = previous;
+    // Set initial loop mode to match default PlayerState.repeatMode (all)
+    audioHandler.setLoopMode(LoopMode.all);
   }
-
-  bool _isAdvancing = false;
 
   /// Subscribe to the audio player's streams so our state stays in sync.
   void _initAudioListeners() {
@@ -653,59 +631,59 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
       }
     });
 
-    // Track playing state (sync with actual player, e.g. when audio_service controls are used)
+    // Track playing state (sync with actual player)
     _playingSub = player.playingStream.listen((playing) {
       if (mounted && state.isPlaying != playing) {
         state = state.copyWith(isPlaying: playing);
       }
     });
 
-    // Handle song completion — auto-advance to next track
-    _completionSub = player.playerStateStream
-        .where((ps) => ps.processingState == ProcessingState.completed)
-        .listen((_) async {
-          if (mounted && !_isAdvancing) {
-            _isAdvancing = true;
-            // Small debounce to prevent race condition when state is transitioning
-            await Future.delayed(const Duration(milliseconds: 300));
-            if (mounted) next();
-            _isAdvancing = false;
-          }
-        });
+    // Track current index changes (from just_audio's native queue management).
+    // This fires on skipToNext, skipToPrevious, auto-advance, and skipToQueueItem.
+    _indexSub = player.currentIndexStream.listen((index) {
+      if (mounted && index != null && index >= 0) {
+        final songQueue = audioHandler.songQueue;
+        if (index < songQueue.length) {
+          final song = songQueue[index];
+          state = state.copyWith(
+            currentIndex: index,
+            currentSong: song,
+          );
+          // Backfill duration for restored songs if needed
+          _backfillDuration(song);
+        }
+      }
+    });
   }
 
-  /// Actually load and play a song on the audio player.
-  Future<void> _loadAndPlay(Song song) async {
-    try {
-      final detectedDuration = await audioHandler.playFromSong(song);
-
-      // Backfill duration for restored songs (Duration.zero from DirectoryScanner)
-      if (song.duration == Duration.zero && detectedDuration > Duration.zero) {
-        await _songDao.saveSong(song.copyWith(duration: detectedDuration));
+  /// Backfill duration for songs restored from DirectoryScanner with Duration.zero.
+  Future<void> _backfillDuration(Song song) async {
+    if (song.duration == Duration.zero) {
+      final player = audioHandler.player;
+      final detected = player.duration;
+      if (detected != null && detected > Duration.zero) {
+        await _songDao.saveSong(song.copyWith(duration: detected));
       }
-    } catch (e) {
-      // If playback fails, log error and update state
-      state = state.copyWith(isPlaying: false);
-      // ignore: avoid_print
-      print('PlayerNotifier: Failed to play "${song.title}": $e');
     }
   }
 
   /// Play a single song.
-  void playSong(Song song) {
+  Future<void> playSong(Song song) async {
+    final queue = [song];
     state = state.copyWith(
       currentSong: song,
-      queue: [song],
+      queue: queue,
       currentIndex: 0,
       isPlaying: true,
       position: Duration.zero,
       duration: Duration.zero,
     );
-    _loadAndPlay(song);
+    await audioHandler.loadQueue(queue, 0);
+    await audioHandler.play();
   }
 
   /// Play a list of songs starting at an index.
-  void playQueue(List<Song> songs, int startIndex) {
+  Future<void> playQueue(List<Song> songs, int startIndex) async {
     if (songs.isEmpty) return;
     final song = songs[startIndex];
     state = state.copyWith(
@@ -716,7 +694,8 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
       position: Duration.zero,
       duration: Duration.zero,
     );
-    _loadAndPlay(song);
+    await audioHandler.loadQueue(songs, startIndex);
+    await audioHandler.play();
   }
 
   void togglePlayPause() {
@@ -749,6 +728,7 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
     state = state.copyWith(duration: duration);
   }
 
+  /// Skip to next track. Delegated entirely to just_audio.
   void next() {
     if (state.repeatMode == SongRepeatMode.one) {
       // Restart current song
@@ -756,34 +736,10 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
       audioHandler.play();
       return;
     }
-
-    if (state.currentIndex < state.queue.length - 1) {
-      final newIndex = state.currentIndex + 1;
-      final nextSong = state.queue[newIndex];
-      state = state.copyWith(
-        currentIndex: newIndex,
-        currentSong: nextSong,
-        position: Duration.zero,
-        duration: Duration.zero,
-      );
-      _loadAndPlay(nextSong);
-    } else if (state.repeatMode == SongRepeatMode.all &&
-        state.queue.isNotEmpty) {
-      final firstSong = state.queue[0];
-      state = state.copyWith(
-        currentIndex: 0,
-        currentSong: firstSong,
-        position: Duration.zero,
-        duration: Duration.zero,
-      );
-      _loadAndPlay(firstSong);
-    } else {
-      // End of queue, no repeat — stop playing
-      audioHandler.stop();
-      state = state.copyWith(isPlaying: false, position: Duration.zero);
-    }
+    audioHandler.skipToNext();
   }
 
+  /// Skip to previous track. Delegated entirely to just_audio.
   void previous() {
     // If more than 3 seconds in, restart current song
     if (state.position.inSeconds > 3) {
@@ -791,65 +747,66 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
       audioHandler.play();
       return;
     }
-
-    if (state.currentIndex > 0) {
-      final newIndex = state.currentIndex - 1;
-      final prevSong = state.queue[newIndex];
-      state = state.copyWith(
-        currentIndex: newIndex,
-        currentSong: prevSong,
-        position: Duration.zero,
-        duration: Duration.zero,
-      );
-      _loadAndPlay(prevSong);
-    }
+    audioHandler.skipToPrevious();
   }
 
   void toggleShuffle() {
-    state = state.copyWith(isShuffled: !state.isShuffled);
-    if (state.isShuffled && state.queue.length > 1) {
-      final current = state.currentSong;
-      final shuffled = [...state.queue]..shuffle();
-      // Keep current song at position 0
-      if (current != null) {
-        shuffled.remove(current);
-        shuffled.insert(0, current);
-      }
-      state = state.copyWith(queue: shuffled, currentIndex: 0);
-    }
+    final newShuffled = !state.isShuffled;
+    state = state.copyWith(isShuffled: newShuffled);
+    audioHandler.setShuffleModeEnabled(newShuffled);
   }
 
   void cycleRepeatMode() {
     final modes = SongRepeatMode.values;
     final nextIndex = (state.repeatMode.index + 1) % modes.length;
-    state = state.copyWith(repeatMode: modes[nextIndex]);
+    final newMode = modes[nextIndex];
+    state = state.copyWith(repeatMode: newMode);
+
+    // Map our repeat mode to just_audio's LoopMode
+    switch (newMode) {
+      case SongRepeatMode.off:
+        audioHandler.setLoopMode(LoopMode.off);
+      case SongRepeatMode.one:
+        audioHandler.setLoopMode(LoopMode.one);
+      case SongRepeatMode.all:
+        audioHandler.setLoopMode(LoopMode.all);
+    }
   }
 
   void addToQueue(Song song) {
-    state = state.copyWith(queue: [...state.queue, song]);
+    final newQueue = [...state.queue, song];
+    state = state.copyWith(queue: newQueue);
+    // Re-load the queue to keep ConcatenatingAudioSource in sync.
+    // Maintain current playback position.
+    audioHandler.loadQueue(newQueue, state.currentIndex);
   }
 
   void removeFromQueue(int index) {
     if (index < 0 || index >= state.queue.length) return;
     final newQueue = [...state.queue]..removeAt(index);
+
+    if (newQueue.isEmpty) {
+      stop();
+      return;
+    }
+
     int newIndex = state.currentIndex;
     if (index < state.currentIndex) {
       newIndex--;
     } else if (index == state.currentIndex) {
-      // If removing current song, play next
-      if (newQueue.isNotEmpty) {
-        newIndex = newIndex.clamp(0, newQueue.length - 1);
-        final nextSong = newQueue[newIndex];
-        state = state.copyWith(
-          queue: newQueue,
-          currentIndex: newIndex,
-          currentSong: nextSong,
-        );
-        _loadAndPlay(nextSong);
-        return;
-      }
+      newIndex = newIndex.clamp(0, newQueue.length - 1);
     }
-    state = state.copyWith(queue: newQueue, currentIndex: newIndex);
+
+    state = state.copyWith(
+      queue: newQueue,
+      currentIndex: newIndex,
+      currentSong: newQueue[newIndex],
+    );
+    // Re-load the queue to keep ConcatenatingAudioSource in sync.
+    audioHandler.loadQueue(newQueue, newIndex);
+    if (index == state.currentIndex) {
+      audioHandler.play();
+    }
   }
 
   void stop() {
@@ -862,7 +819,7 @@ class PlayerNotifier extends StateNotifier<PlayerState> {
     _positionSub?.cancel();
     _durationSub?.cancel();
     _playingSub?.cancel();
-    _completionSub?.cancel();
+    _indexSub?.cancel();
     super.dispose();
   }
 }
@@ -873,3 +830,4 @@ final playerProvider = StateNotifierProvider<PlayerNotifier, PlayerState>((
   final songDao = ref.watch(songDaoProvider);
   return PlayerNotifier(songDao);
 });
+
